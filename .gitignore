@@ -1,0 +1,13 @@
+# Rust
+/target
+**/*.rlib
+**/*.rmeta
+
+# Python/Flask
+/flask-ui/.venv
+__pycache__/
+*.pyc
+
+# Local env & outputs
+.env
+results.json
