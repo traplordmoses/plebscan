@@ -38,40 +38,58 @@ struct Args {
     chain: u32,
     #[arg(long = "sleep-ms", default_value_t = 100)]
     sleep_ms: u64,
-
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    with_alkanes: bool,
+    #[arg(long = "with-runes", default_value_t = true, action = clap::ArgAction::Set)]
+    with_runes: bool,
+    #[arg(long, default_value = "https://open-api.unisat.io")]
+    unisat_base: String,
+    #[arg(long, env = "UNISAT_API_KEY")]
+    unisat_api_key: Option<String>,
     #[arg(long, default_value = "https://api.hiro.so")]
     base_url: String,
     #[arg(long, env = "HIRO_API_KEY")]
     api_key: Option<String>,
-
     #[arg(long, default_value = "results.json")]
     output: String,
     #[arg(long, default_value = "bitcoin")]
     network: String,
-
     #[arg(long, env = "XPUB")]
     xpub: Option<String>,
     #[arg(long)]
     verbose: bool,
-    #[arg(long = "with-runes", default_value_t = true)]
-    with_runes: bool,
-
-    // single-address mode (skip XPUB derivation)
     #[arg(long, value_name = "BTC_ADDRESS")]
     address: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct AlkaneHolding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,                 // e.g. "2:0"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbol: Option<String>,             // e.g. "DIESEL"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decimals: Option<u32>,              // usually 8 on UniSat
+    amount: String,                     // base units as integer string
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount_hr: Option<String>,          // NEW: human-readable (e.g. "0.43724184")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ordiscan_url: Option<String>,       // NEW: link to Ordiscan detail
 }
 
 #[derive(Serialize)]
 struct WalletItem {
     pubkey: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     inscription_ids: Vec<String>,
     inscription_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     runes: Vec<RuneHolding>,
     runes_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    alkanes: Vec<AlkaneHolding>,
+    alkanes_count: usize,
 }
-
-#[derive(Serialize)]
-struct WalletsWrapper { wallets: Vec<WalletItem> }
 
 #[derive(Serialize, Clone)]
 struct RuneHolding {
@@ -95,7 +113,7 @@ async fn main() -> Result<()> {
     // ---------- SINGLE ADDRESS ----------
     if let Some(addr) = args.address.as_deref() {
         Address::from_str(addr).context("--address is not a valid Bitcoin address")?;
-        let item = scan_address(&client, &base, addr, verbose, &args.api_key, args.with_runes).await?;
+        let item = scan_address(&client, &base, addr, verbose, &args.api_key, args.with_runes,&args.unisat_base, &args.unisat_api_key, args.with_alkanes).await?;
         write_and_print(&args.output, vec![item])?;
         return Ok(());
     }
@@ -146,13 +164,22 @@ async fn main() -> Result<()> {
         };
         let runes_count = runes.len();
 
-        if inscription_count > 0 || runes_count > 0 {
+        let alkanes = if args.with_alkanes {
+            get_alkanes_balances_unisat(
+                &client, &args.unisat_base, &addr, verbose, &args.unisat_api_key
+            ).await.unwrap_or_default()
+        } else { Vec::new() };
+        let alkanes_count = alkanes.len();
+
+        if inscription_count > 0 || runes_count > 0 || alkanes_count > 0 {
             wallets.push(WalletItem {
                 pubkey: addr,
-                inscription_ids: ids,        // moved (not cloned)
-                inscription_count,           // precomputed
-                runes,                       // moved (not cloned)
-                runes_count,                 // precomputed
+                inscription_ids: ids,
+                inscription_count,
+                runes,
+                runes_count,
+                alkanes,         
+                alkanes_count,   
             });
             misses = 0;
         } else {
@@ -179,30 +206,41 @@ async fn scan_address(
     verbose: bool,
     api_key: &Option<String>,
     with_runes: bool,
+    // add these params so main() can pass them down
+    unisat_base: &str,
+    unisat_api_key: &Option<String>,
+    with_alkanes: bool,
 ) -> Result<WalletItem> {
-    let inscription_ids =
-        get_inscription_ids(client, base_url, address, verbose, api_key)
-            .await
-            .unwrap_or_default();
+    let inscription_ids = get_inscription_ids(client, base_url, address, verbose, api_key)
+        .await
+        .unwrap_or_default();
     let inscription_count = inscription_ids.len();
 
     let runes = if with_runes {
         get_runes_balances(client, base_url, address, verbose, api_key)
             .await
             .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    } else { Vec::new() };
     let runes_count = runes.len();
+
+    let alkanes = if with_alkanes {
+        get_alkanes_balances_unisat(client, unisat_base, address, verbose, unisat_api_key)
+            .await
+            .unwrap_or_default()
+    } else { Vec::new() };
+    let alkanes_count = alkanes.len();
 
     Ok(WalletItem {
         pubkey: address.to_string(),
-        inscription_ids,     // moved
-        inscription_count,   // precomputed
-        runes,               // moved
-        runes_count,         // precomputed
+        inscription_ids,
+        inscription_count,
+        runes,
+        runes_count,
+        alkanes,
+        alkanes_count,
     })
 }
+
 
 // -------- utils --------
 fn base_for_network(base: &str, network: &str) -> Result<String> {
@@ -212,6 +250,29 @@ fn base_for_network(base: &str, network: &str) -> Result<String> {
         "bitcoin" | "mainnet" => Ok(b),
         other => bail!("unsupported network: {other}"),
     }
+}
+
+fn find_alkane_id_fallback(item: &serde_json::Value) -> Option<String> {
+    // try common keys first
+    let candidates = [
+        "alkaneId", "tokenId", "id", "aid", "index", "tickId", "alkane_id", "token_id",
+    ];
+    for k in candidates {
+        if let Some(s) = item.get(k).and_then(|x| x.as_str()) {
+            if s.contains(':') { return Some(s.to_string()); }
+        }
+    }
+
+    // brute-force: scan all string fields for something like "number:number"
+    let re = regex::Regex::new(r"^\d+:\d+$").ok()?;
+    if let Some(obj) = item.as_object() {
+        for (_k, v) in obj {
+            if let Some(s) = v.as_str() {
+                if re.is_match(s) { return Some(s.to_string()); }
+            }
+        }
+    }
+    None
 }
 
 fn prompt(s: &str) -> Result<String> {
@@ -273,6 +334,23 @@ fn addr_from_child(
             Address::p2tr(secp, xonly, None, network).to_string()
         }
     })
+}
+
+fn human_amount_str(amount_units: &str, decimals: u32) -> String {
+    let mut s = amount_units.trim_start_matches('+').trim_start_matches('0').to_string();
+    if s.is_empty() { s.push('0'); }  // treat "0" correctly
+    let d = decimals as usize;
+    if s.len() <= d {
+        let zeros = "0".repeat(d - s.len());
+        s = format!("0.{}{}", zeros, s);
+    } else {
+        let split = s.len() - d;
+        s.insert(split, '.');
+    }
+    // trim trailing zeros and any trailing dot
+    while s.contains('.') && s.ends_with('0') { s.pop(); }
+    if s.ends_with('.') { s.pop(); }
+    s
 }
 
 // ---------- HTTP w/ retry ----------
@@ -442,10 +520,137 @@ async fn get_runes_balances(
     Ok(out)
 }
 
+async fn get_alkanes_balances_unisat(
+    client: &Client,
+    unisat_base: &str,
+    address: &str,
+    verbose: bool,
+    unisat_api_key: &Option<String>,
+) -> Result<Vec<AlkaneHolding>> {
+    let base = unisat_base.trim_end_matches('/');
+    let url = format!("{}/v1/indexer/address/{}/alkanes/token-list", base, address);
+
+    let mut out: Vec<AlkaneHolding> = Vec::new();
+    let mut start: u32 = 0;
+    const LIMIT: u32 = 100;
+
+    loop {
+        // UniSat uses Bearer auth; params are usually start/limit
+        // ref: Open API docs & examples (Bearer) and rate limits. 
+        // https://docs.unisat.io/dev/open-api-documentation  (auth, base urls, limits)
+        let mut req = client
+            .get(&url)
+            .query(&[("start", start.to_string()), ("limit", LIMIT.to_string())])
+            .header(header::ACCEPT, "application/json");
+
+        if let Some(key) = unisat_api_key {
+            req = req.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let page = match get_json_with_backoff(req, 3, verbose).await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("error querying UniSat Alkanes for {}: {}", address, e);
+                break;
+            }
+        };
+
+        if verbose {
+            eprintln!("ALKANES token-list start={} for {}: {:#}", start, address, page);
+        }
+
+        // Most UniSat “list” endpoints look like:
+        // { code, msg, data: { total, list: [...] } }
+        // but sometimes older ones used "detail". Handle both.
+        let list = page
+            .get("data")
+            .and_then(|d| d.get("list").or_else(|| d.get("detail")))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if list.is_empty() {
+            break;
+        }
+
+        for item in list {
+            // amount in base units
+            let amount = item
+                .get("amount")
+                .or_else(|| item.get("balance"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("0")
+                .to_string();
+
+            // robust id extraction (e.g., "2:0")
+            let id = item
+                .get("alkaneId")
+                .or_else(|| item.get("tokenId"))
+                .or_else(|| item.get("id"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| find_alkane_id_fallback(&item));
+
+            // "DIESEL", etc.
+            let symbol = item
+                .get("symbol")
+                .or_else(|| item.get("ticker"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+
+            // default 8 if missing
+            let decimals = item
+                .get("divisibility")
+                .or_else(|| item.get("decimals"))
+                .and_then(|x| x.as_u64())
+                .map(|n| n as u32)
+                .or(Some(8));
+
+            // human-readable amount
+            let amount_hr = Some(human_amount_str(&amount, decimals.unwrap_or(8)));
+
+            // Ordiscan URL prefers {SYMBOL}/{ID} when both exist
+            let ordiscan_url = match (symbol.as_ref(), id.as_ref()) {
+                (Some(sym), Some(tid)) => Some(format!("https://ordiscan.com/alkane/{}/{}", sym, tid)),
+                (Some(sym), None)      => Some(format!("https://ordiscan.com/alkane/{}", sym)),
+                (None, Some(tid))      => Some(format!("https://ordiscan.com/alkane/{}", tid)),
+                _                      => None,
+            };
+
+            out.push(AlkaneHolding {
+                id,
+                symbol,
+                decimals,
+                amount,
+                amount_hr,
+                ordiscan_url,
+            });
+        }
+
+
+        start += LIMIT;
+
+        if let Some(total) = page
+            .get("data")
+            .and_then(|d| d.get("total"))
+            .and_then(|t| t.as_u64())
+        {
+            if (start as u64) >= total {
+                break;
+            }
+        }
+    }
+
+    out.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    Ok(out)
+}
+
 // ---------- write ----------
 fn write_and_print(path: &str, wallets: Vec<WalletItem>) -> Result<()> {
-    let wrapper = WalletsWrapper { wallets };
-    let json_pretty = serde_json::to_string_pretty(&wrapper)?;
+    #[derive(Serialize)]
+    struct Out { wallets: Vec<WalletItem> }
+
+    let json_pretty = serde_json::to_string_pretty(&Out { wallets })?;
     println!("{json_pretty}");
     std::fs::write(path, json_pretty)?;
     eprintln!("json written to {}", path);
