@@ -1,5 +1,5 @@
 # ---------- Stage 1: build Rust binary ----------
-FROM rust:1.77-slim AS rust-builder
+FROM rust:1.85-slim AS rust-builder
 WORKDIR /app
 # System deps (openssl is a safe default for reqwest builds)
 RUN apt-get update && apt-get install -y --no-install-recommends \
