@@ -16,6 +16,8 @@ from flask import (
 # Load env
 load_dotenv()
 
+PLEBSCAN_OUTPUT = os.getenv("PLEBSCAN_OUTPUT", "/tmp/results.json")
+
 # -------- caches --------
 _floor_cache: dict[str, tuple[float, float]] = {}
 _btc_usd_cache: tuple[float, float] = (0, 0.0)
@@ -127,13 +129,14 @@ def extract_last_json(text: str) -> dict | None:
     return None
 
 def load_results_json_fallback() -> list[dict]:
-    """Try to load wallets from results.json next to app.py if session is empty."""
-    p = os.path.join(os.path.dirname(__file__), "results.json")
-    if os.path.isfile(p):
+    for p in (PLEBSCAN_OUTPUT, os.path.join(os.path.dirname(__file__), "results.json")):
         try:
-            with open(p, "r") as f:
-                data = json.load(f)
-                return data.get("wallets", [])
+            if p and os.path.isfile(p):
+                with open(p, "r") as f:
+                    data = json.load(f)
+                wallets = data.get("wallets", [])
+                if wallets:
+                    return wallets
         except Exception:
             pass
     return []
@@ -736,6 +739,7 @@ def index():
             "--network", network,
             "--chain", str(chain),
             "--base-url", os.getenv("HIRO_BASE", "https://api.hiro.so"),
+            "--output", PLEBSCAN_OUTPUT,  # <<< ensure we know where the file goes
         ]
         hiro_key = os.getenv("HIRO_API_KEY")
         if hiro_key:
@@ -743,15 +747,31 @@ def index():
 
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            raw_output = proc.stdout
-            data = extract_last_json(raw_output) or json.load(open("results.json"))
+            raw_output = proc.stdout or ""
+            # First try to parse JSON from stdout (scanner prints it)
+            data = extract_last_json(raw_output)
+
+            # Fallback: read the file the scanner was told to write
+            if not data and os.path.exists(PLEBSCAN_OUTPUT):
+                with open(PLEBSCAN_OUTPUT, "r") as f:
+                    data = json.load(f)
+
+            if not data:
+                app.logger.error(
+                    "Scanner produced no JSON.\nCMD: %r\nSTDOUT:\n%s\nSTDERR:\n%s",
+                    cmd, proc.stdout, proc.stderr
+                )
+                flash("Scanner ran but returned no JSON. Double-check your XPUB, network, and try again.", "danger")
+                return redirect(url_for("index"))
+
             wallets = data.get("wallets", [])
             session["plebscan_wallets"] = wallets
 
             if not wallets:
-                flash("No inscriptions found for that XPUB (or scan limit too low).", "info")
+                flash("No inscriptions found (or scan limit too low).", "info")
 
             return redirect(url_for("dashboard"))
+
         except subprocess.CalledProcessError as e:
             app.logger.error("Scanner failed: %s\nstdout:\n%s\nstderr:\n%s", e, e.stdout, e.stderr)
             flash(f"Scanner failed: {e.stderr or e}", "danger")
@@ -761,7 +781,6 @@ def index():
             flash(f"Unexpected error: {e}", "danger")
             return redirect(url_for("index"))
 
-    return render_template("index.html")
   
 
 def enrich_wallets(wallets, skip_runes, deadline):
