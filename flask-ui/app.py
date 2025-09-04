@@ -113,6 +113,18 @@ class MagicEdenClient:
 me_client = MagicEdenClient(ME_API_BASE, ME_KEY, _ME_MIN_INTERVAL)
 
 # -------- helpers --------
+
+DEBUG_TOKEN = os.getenv("DEBUG_TOKEN", "").strip()
+
+def _debug_enabled(req) -> bool:
+    # Allow if Flask debug mode or explicit env flag
+    if app.debug or os.getenv("ENABLE_DEBUG_ROUTES") == "1":
+        return True
+    # Or allow if caller presents the correct token
+    token = (req.args.get("debug_token") or req.headers.get("X-Debug-Token") or "").strip()
+    return bool(DEBUG_TOKEN) and token == DEBUG_TOKEN
+
+
 def extract_last_json(text: str) -> dict | None:
     last_brace = text.rfind("{")
     if last_brace == -1:
@@ -643,19 +655,24 @@ def _fetch_brc20_unisat(addr: str) -> list[dict]:
 
 @app.route("/debug/rune_info")
 def debug_rune_info():
-    name = request.args.get("name", "").strip()      # e.g. EPICEPICEPICEPIC
-    spaced = request.args.get("spaced", "").strip()  # e.g. EPIC•EPIC•EPIC•EPIC
+    if not _debug_enabled(request):
+        return jsonify({"error": "debug disabled"}), 403
+    name = (request.args.get("name") or "").strip()      # e.g. EPICEPICEPICEPIC
+    spaced = (request.args.get("spaced") or "").strip()  # e.g. EPIC•EPIC•EPIC•EPIC
     if not name and not spaced:
         return jsonify({"error": "pass ?name= or ?spaced="}), 400
+
     candidates = []
     if spaced: candidates.append(quote(spaced, safe=":"))
     if name:   candidates.append(quote(name,   safe=":"))
+
     results = []
     for slug in candidates:
         url = f"{ME_API_BASE}/runes/market/{slug}/info"
         try:
             resp = requests.get(url, headers=HEADERS, timeout=12)
             ct = (resp.headers.get("content-type") or "").lower()
+            body_sample = resp.text[:2000]  # keep response small
             out = {
                 "url": url,
                 "status": resp.status_code,
@@ -666,22 +683,28 @@ def debug_rune_info():
                 "x_ratelimit_reset": resp.headers.get("x-ratelimit-reset"),
             }
             if "application/json" in ct:
-                try: out["json"] = resp.json()
-                except Exception: out["body"] = resp.text[:2000]
+                try:
+                    out["json"] = resp.json()
+                except Exception:
+                    out["body"] = body_sample
             else:
-                out["body"] = resp.text[:2000]
+                out["body"] = body_sample
             results.append(out)
         except Exception as e:
             results.append({"url": url, "error": str(e)})
+
     return jsonify({"candidates_tried": candidates, "results": results})
+
 
 @app.route("/dashboard/debug/rune_info")
 def debug_rune_info_alias():
-    # redirect to the real debug route so old/guessed URL works
+    if not _debug_enabled(request):
+        return jsonify({"error": "debug disabled"}), 403
     return redirect(url_for(
         "debug_rune_info",
         name=(request.args.get("name","") or "").strip(),
         spaced=(request.args.get("spaced","") or "").strip(),
+        debug_token=request.args.get("debug_token"),  # forward token if present
     ), code=302)
 
 @app.route("/favicon.ico")
@@ -698,45 +721,54 @@ def favicon():
 def index():
     if request.method == "POST":
         xpub = request.form.get("xpub", "").strip()
-        purpose = request.form.get("purpose")
-        max_addresses = request.form.get("max", "200").strip()
-        network = request.form.get("network", "bitcoin").strip()
-        chain = request.form.get("chain", "0").strip()
+        purpose = (request.form.get("purpose") or "").strip()
+        max_addresses = (request.form.get("max", "200") or "200").strip()
+        network = (request.form.get("network", "bitcoin") or "bitcoin").strip()
+        chain = (request.form.get("chain", "0") or "0").strip()
 
+        # ---- validation ----
         if not xpub:
             flash("Please enter a valid XPUB or TPUB", "warning")
             return redirect(url_for("index"))
-        if purpose not in ["p44", "p49", "p84", "p86"]:
+
+        valid_purposes = {"p44", "p49", "p84", "p86", "44", "49", "84", "86"}
+        if purpose not in valid_purposes:
             flash("Please select a valid derivation path", "warning")
             return redirect(url_for("index"))
+
         try:
             max_addresses = int(max_addresses)
             chain = int(chain)
-            if max_addresses < 1 or chain not in [0, 1]:
+            if max_addresses < 1 or chain not in (0, 1):
                 raise ValueError
         except ValueError:
             flash("Max addresses must be a positive integer and chain must be 0 or 1", "warning")
             return redirect(url_for("index"))
-        if network not in ["bitcoin", "testnet"]:
-            flash("Network must be 'bitcoin' or 'testnet'", "warning")
+
+        if network not in {"bitcoin", "mainnet", "testnet"}:
+            flash("Network must be 'bitcoin' (mainnet) or 'testnet'", "warning")
             return redirect(url_for("index"))
 
-        # persist for /dashboard
+       # ---- persist for /dashboard ----
+        # normalize to the 'p##' form for consistent display later
+        purpose_p = purpose if purpose.startswith("p") else f"p{purpose}"
         session["xpub"] = xpub
-        session["purpose"] = purpose
+        session["purpose"] = purpose_p
         session["network"] = network
         session["chain"] = chain
 
-        # Run scanner (CLI)
+        # ---- normalize flags for the scanner CLI ----
+        network_cli = "mainnet" if network in ("bitcoin", "mainnet") else "testnet"
+        purpose_cli = purpose[1:] if purpose.startswith("p") and purpose[1:].isdigit() else purpose  # p86 -> 86
+
         cmd = [
             PLEBSCAN_BIN,
-            "--purpose", purpose,
+            "--purpose", purpose_cli,
             "--xpub", xpub,
             "--max", str(max_addresses),
             "--miss-limit", "20",
             "--sleep-ms", "100",
-            "--verbose",
-            "--network", network,
+            "--network", network_cli,
             "--chain", str(chain),
             "--base-url", os.getenv("HIRO_BASE", "https://api.hiro.so"),
             "--output", PLEBSCAN_OUTPUT,
@@ -745,41 +777,73 @@ def index():
         if hiro_key:
             cmd.extend(["--api-key", hiro_key])
 
+        app.logger.info("Running scanner: %s", " ".join(map(str, cmd)))
+
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # don't use check=True so we can log stdout/stderr on failures
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+
+            if proc.returncode != 0:
+                tail = (proc.stderr or "").strip()
+                app.logger.error(
+                    "Scanner failed (rc=%s)\nCMD: %r\nSTDOUT:\n%s\nSTDERR:\n%s",
+                    proc.returncode, cmd, proc.stdout, tail
+                )
+                flash("Scanner failed. Double-check XPUB/purpose/network and try again.", "danger")
+                return redirect(url_for("index"))
+
             raw_output = proc.stdout or ""
+
+            # 1) try JSON in stdout
             data = extract_last_json(raw_output)
 
-            if not data and os.path.exists(PLEBSCAN_OUTPUT):
-                with open(PLEBSCAN_OUTPUT, "r") as f:
-                    data = json.load(f)
+            # 2) try explicit output path
+            if not data and PLEBSCAN_OUTPUT and os.path.exists(PLEBSCAN_OUTPUT):
+                try:
+                    with open(PLEBSCAN_OUTPUT, "r") as f:
+                        data = json.load(f)
+                except Exception as e:
+                    app.logger.warning("Could not read %s: %s", PLEBSCAN_OUTPUT, e)
+
+            # 3) try common fallback filenames/locations
+            if not data:
+                for p in (
+                    os.path.join(os.getcwd(), "results.json"),
+                    os.path.join(os.path.dirname(__file__), "results.json"),
+                    "/app/results.json",
+                ):
+                    if os.path.isfile(p):
+                        try:
+                            with open(p, "r") as f:
+                                data = json.load(f)
+                            break
+                        except Exception:
+                            pass
 
             if not data:
                 app.logger.error(
-                    "Scanner produced no JSON.\nCMD: %r\nSTDOUT:\n%s\nSTDERR:\n%s",
-                    cmd, proc.stdout, proc.stderr
+                    "Scanner produced no JSON.\nCMD: %r\nreturncode=%s\nSTDOUT:\n%s\nSTDERR:\n%s",
+                    cmd, proc.returncode, proc.stdout, proc.stderr
                 )
-                flash("Scanner ran but returned no JSON. Double-check your XPUB, network, and try again.", "danger")
+                flash("Scanner ran but returned no JSON. Try purpose 86 on mainnet and rescan.", "danger")
                 return redirect(url_for("index"))
 
-            wallets = data.get("wallets", [])
-            session["plebscan_wallets"] = wallets
+            wallets = data.get("wallets") if isinstance(data, dict) else None
+            if not isinstance(wallets, list):
+                wallets = []
 
+            session["plebscan_wallets"] = wallets
             if not wallets:
                 flash("No inscriptions found (or scan limit too low).", "info")
 
             return redirect(url_for("dashboard"))
 
-        except subprocess.CalledProcessError as e:
-            app.logger.error("Scanner failed: %s\nstdout:\n%s\nstderr:\n%s", e, e.stdout, e.stderr)
-            flash(f"Scanner failed: {e.stderr or e}", "danger")
-            return redirect(url_for("index"))
         except Exception as e:
             app.logger.exception("Unexpected error running scanner")
             flash(f"Unexpected error: {e}", "danger")
             return redirect(url_for("index"))
 
-    # ← GET/HEAD fallthrough lives OUTSIDE the POST block
+    # GET/HEAD fallthrough
     return render_template("index.html")
 
 
