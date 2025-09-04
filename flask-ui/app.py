@@ -52,10 +52,14 @@ HEADERS = {
     "User-Agent": "plebscan-dashboard/1.0",
 }
 
-# -------- Scanner binary (still used to discover wallets & inscription_ids) --------
-PLEBSCAN_BIN = os.getenv("PLEBSCAN_BIN")
-if not PLEBSCAN_BIN or not os.path.isfile(PLEBSCAN_BIN):
-    raise RuntimeError(f"PLEBSCAN_BIN not set or not found: {PLEBSCAN_BIN}")
+# -------- Scanner binary (used to discover wallets & inscription_ids) --------
+PLEBSCAN_BIN = os.getenv("PLEBSCAN_BIN", "/app/bin/pleb_scan")
+if not os.path.isfile(PLEBSCAN_BIN):
+    raise RuntimeError(
+        f"PLEBSCAN_BIN not found at {PLEBSCAN_BIN}. "
+        f"If using our Dockerfile it should be /app/bin/pleb_scan, "
+        f"or set PLEBSCAN_BIN in the environment."
+    )
 
 # -------- Magic Eden Client --------
 class MagicEdenClient:

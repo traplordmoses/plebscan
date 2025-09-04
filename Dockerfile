@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the Rust binary
 COPY --from=rust-builder /app/target/release/pleb_scan /app/bin/pleb_scan
 
+RUN chmod +x /app/bin/pleb_scan
+ENV PLEBSCAN_BIN=/app/bin/pleb_scan
+
 # Copy Flask app
 # If your Flask UI lives in flask-ui/, keep these paths.
 COPY flask-ui/requirements.txt /app/requirements.txt
