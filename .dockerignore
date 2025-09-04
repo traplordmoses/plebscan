@@ -1,0 +1,11 @@
+.git
+target
+**/__pycache__/
+**/*.pyc
+.venv
+venv
+env
+results.json
+test_inscriptions.json
+flask-ui/results.json
+flask-ui/test_inscriptions.json
