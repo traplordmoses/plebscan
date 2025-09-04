@@ -780,6 +780,7 @@ def index():
             app.logger.exception("Unexpected error running scanner")
             flash(f"Unexpected error: {e}", "danger")
             return redirect(url_for("index"))
+        return render_template("index.html")
 
   
 
