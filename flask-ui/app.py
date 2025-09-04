@@ -707,6 +707,8 @@ def debug_rune_info_alias():
         debug_token=request.args.get("debug_token"),  # forward token if present
     ), code=302)
 
+
+
 @app.route("/favicon.ico")
 def favicon():
     return send_from_directory(
@@ -721,10 +723,10 @@ def favicon():
 def index():
     if request.method == "POST":
         xpub = request.form.get("xpub", "").strip()
-        purpose = (request.form.get("purpose") or "").strip()
+        purpose_in = (request.form.get("purpose") or "").strip().lower()
         max_addresses = (request.form.get("max", "200") or "200").strip()
-        network = (request.form.get("network", "bitcoin") or "bitcoin").strip()
-        chain = (request.form.get("chain", "0") or "0").strip()
+        network_in = (request.form.get("network", "bitcoin") or "bitcoin").strip().lower()
+        chain_in = (request.form.get("chain", "0") or "0").strip()
 
         # ---- validation ----
         if not xpub:
@@ -732,43 +734,42 @@ def index():
             return redirect(url_for("index"))
 
         valid_purposes = {"p44", "p49", "p84", "p86", "44", "49", "84", "86"}
-        if purpose not in valid_purposes:
+        if purpose_in not in valid_purposes:
             flash("Please select a valid derivation path", "warning")
             return redirect(url_for("index"))
 
         try:
             max_addresses = int(max_addresses)
-            chain = int(chain)
+            chain = int(chain_in)
             if max_addresses < 1 or chain not in (0, 1):
                 raise ValueError
         except ValueError:
             flash("Max addresses must be a positive integer and chain must be 0 or 1", "warning")
             return redirect(url_for("index"))
 
-        if network not in {"bitcoin", "mainnet", "testnet"}:
+        if network_in not in {"bitcoin", "mainnet", "testnet"}:
             flash("Network must be 'bitcoin' (mainnet) or 'testnet'", "warning")
             return redirect(url_for("index"))
 
-       # ---- persist for /dashboard ----
-        # normalize to the 'p##' form for consistent display later
-        purpose_p = purpose if purpose.startswith("p") else f"p{purpose}"
+        # ---- canonicalize ----
+        purpose_cli = purpose_in if purpose_in.startswith("p") else f"p{purpose_in}"
+        network_cli = "bitcoin" if network_in in {"bitcoin", "mainnet"} else "testnet"
+
+        # ---- persist for /dashboard ----
         session["xpub"] = xpub
-        session["purpose"] = purpose_p
-        session["network"] = network
+        session["purpose"] = purpose_cli      # store canonical form
+        session["network"] = network_cli      # store normalized network
         session["chain"] = chain
 
-        # ---- normalize flags for the scanner CLI ----
-        network_cli = "mainnet" if network in ("bitcoin", "mainnet") else "testnet"
-        purpose_cli = purpose[1:] if purpose.startswith("p") and purpose[1:].isdigit() else purpose  # p86 -> 86
-
+        # ---- build scanner cmd ----
         cmd = [
             PLEBSCAN_BIN,
-            "--purpose", purpose_cli,
+            "--purpose", purpose_cli,         # <-- p44/p49/p84/p86
             "--xpub", xpub,
             "--max", str(max_addresses),
             "--miss-limit", "20",
             "--sleep-ms", "100",
-            "--network", network_cli,
+            "--network", network_cli,         # <-- bitcoin/testnet
             "--chain", str(chain),
             "--base-url", os.getenv("HIRO_BASE", "https://api.hiro.so"),
             "--output", PLEBSCAN_OUTPUT,
@@ -780,24 +781,19 @@ def index():
         app.logger.info("Running scanner: %s", " ".join(map(str, cmd)))
 
         try:
-            # don't use check=True so we can log stdout/stderr on failures
             proc = subprocess.run(cmd, capture_output=True, text=True)
 
             if proc.returncode != 0:
-                tail = (proc.stderr or "").strip()
                 app.logger.error(
                     "Scanner failed (rc=%s)\nCMD: %r\nSTDOUT:\n%s\nSTDERR:\n%s",
-                    proc.returncode, cmd, proc.stdout, tail
+                    proc.returncode, cmd, proc.stdout, (proc.stderr or "").strip()
                 )
                 flash("Scanner failed. Double-check XPUB/purpose/network and try again.", "danger")
                 return redirect(url_for("index"))
 
             raw_output = proc.stdout or ""
-
-            # 1) try JSON in stdout
             data = extract_last_json(raw_output)
 
-            # 2) try explicit output path
             if not data and PLEBSCAN_OUTPUT and os.path.exists(PLEBSCAN_OUTPUT):
                 try:
                     with open(PLEBSCAN_OUTPUT, "r") as f:
@@ -805,7 +801,6 @@ def index():
                 except Exception as e:
                     app.logger.warning("Could not read %s: %s", PLEBSCAN_OUTPUT, e)
 
-            # 3) try common fallback filenames/locations
             if not data:
                 for p in (
                     os.path.join(os.getcwd(), "results.json"),
@@ -825,7 +820,7 @@ def index():
                     "Scanner produced no JSON.\nCMD: %r\nreturncode=%s\nSTDOUT:\n%s\nSTDERR:\n%s",
                     cmd, proc.returncode, proc.stdout, proc.stderr
                 )
-                flash("Scanner ran but returned no JSON. Try purpose 86 on mainnet and rescan.", "danger")
+                flash("Scanner ran but returned no JSON. Try purpose p86 on bitcoin and rescan.", "danger")
                 return redirect(url_for("index"))
 
             wallets = data.get("wallets") if isinstance(data, dict) else None
@@ -845,7 +840,6 @@ def index():
 
     # GET/HEAD fallthrough
     return render_template("index.html")
-
 
 def enrich_wallets(wallets, skip_runes, deadline):
     # Collect all unique inscription IDs from scanner output
