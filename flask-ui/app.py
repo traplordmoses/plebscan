@@ -739,7 +739,7 @@ def index():
             "--network", network,
             "--chain", str(chain),
             "--base-url", os.getenv("HIRO_BASE", "https://api.hiro.so"),
-            "--output", PLEBSCAN_OUTPUT,  # <<< ensure we know where the file goes
+            "--output", PLEBSCAN_OUTPUT,
         ]
         hiro_key = os.getenv("HIRO_API_KEY")
         if hiro_key:
@@ -748,10 +748,8 @@ def index():
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
             raw_output = proc.stdout or ""
-            # First try to parse JSON from stdout (scanner prints it)
             data = extract_last_json(raw_output)
 
-            # Fallback: read the file the scanner was told to write
             if not data and os.path.exists(PLEBSCAN_OUTPUT):
                 with open(PLEBSCAN_OUTPUT, "r") as f:
                     data = json.load(f)
@@ -780,9 +778,10 @@ def index():
             app.logger.exception("Unexpected error running scanner")
             flash(f"Unexpected error: {e}", "danger")
             return redirect(url_for("index"))
-        return render_template("index.html")
 
-  
+    # ← GET/HEAD fallthrough lives OUTSIDE the POST block
+    return render_template("index.html")
+
 
 def enrich_wallets(wallets, skip_runes, deadline):
     # Collect all unique inscription IDs from scanner output
