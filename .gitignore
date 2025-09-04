@@ -1,13 +1,30 @@
-# Rust
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/        
+
+# ---- Rust ----
 /target
 **/*.rlib
 **/*.rmeta
 
-# Python/Flask
-/flask-ui/.venv
-__pycache__/
-*.pyc
+# ---- Python / Flask ----
+.venv/
+venv/
+env/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
 
-# Local env & outputs
+# ---- Secrets / config ----
 .env
+**/.env
+!.env.example
+
+# ---- Local outputs ----
 results.json
+**/results.json
+**/test_inscriptions.json
+EOF

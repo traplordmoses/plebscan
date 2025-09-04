@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: plebscan-web
+    env: python
+    region: oregon
+    plan: starter
+    autoDeploy: true
+
+    buildCommand: |
+      # install Rust and build the scanner
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      . $HOME/.cargo/env
+      cargo build --release
+      # install Flask deps
+      pip install -r flask-ui/requirements.txt
+
+    startCommand: |
+      export PLEBSCAN_BIN=./target/release/pleb_scan
+      cd flask-ui
+      exec gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 8 --timeout 120
+
+    envVars:
+      - key: SECRET_KEY      # set in Render dashboard
+        sync: false
+      - key: ME_API_KEY      # required
+        sync: false
+      - key: XVERSE_API_KEY  # optional
+        sync: false
+      - key: UNISAT_API_KEY  # optional
+        sync: false
+      - key: HIRO_API_KEY    # optional
+        sync: false
+      - key: HIRO_BASE
+        value: https://api.hiro.so
+      - key: ME_API_BASE
+        value: https://api-mainnet.magiceden.dev/v2/ord/btc
+      - key: XV_API_BASE
+        value: https://api.secretkeylabs.io/v1
+      - key: ME_MIN_INTERVAL
+        value: "0.35"

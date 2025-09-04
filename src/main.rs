@@ -1,13 +1,3 @@
-// cargo.toml (deps you need)
-// anyhow = "1"
-// bitcoin = { version = "0.32", features = ["base64"] }
-// clap = { version = "4", features = ["derive"] }
-// dotenv = "0.15"
-// reqwest = { version = "0.11", features = ["json", "gzip", "brotli", "deflate", "stream", "rustls-tls"] }
-// serde = { version = "1", features = ["derive"] }
-// serde_json = "1"
-// tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
-
 use anyhow::{bail, Context, Result};
 use bitcoin::bip32::{ChildNumber, DerivationPath, Xpub};
 use bitcoin::key::PublicKey;
@@ -21,6 +11,10 @@ use serde_json::Value;
 use std::io::{stdin, stdout, Write};
 use std::str::FromStr;
 use tokio::time::{sleep, Duration};
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Purpose { P44, P49, P84, P86 }
@@ -58,37 +52,28 @@ struct Args {
     xpub: Option<String>,
     #[arg(long)]
     verbose: bool,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    with_brc20: bool,
     #[arg(long, value_name = "BTC_ADDRESS")]
     address: Option<String>,
+    #[arg(long, env = "BRC20_BLOCK_HEIGHT")]
+    brc20_block_height: Option<u64>,
+
 }
 
 #[derive(Serialize, Clone)]
 struct AlkaneHolding {
     #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,                 // e.g. "2:0"
+    id: Option<String>,              
     #[serde(skip_serializing_if = "Option::is_none")]
-    symbol: Option<String>,             // e.g. "DIESEL"
+    symbol: Option<String>,          
     #[serde(skip_serializing_if = "Option::is_none")]
-    decimals: Option<u32>,              // usually 8 on UniSat
-    amount: String,                     // base units as integer string
+    decimals: Option<u32>,          
+    amount: String,                
     #[serde(skip_serializing_if = "Option::is_none")]
-    amount_hr: Option<String>,          // NEW: human-readable (e.g. "0.43724184")
+    amount_hr: Option<String>,        
     #[serde(skip_serializing_if = "Option::is_none")]
-    ordiscan_url: Option<String>,       // NEW: link to Ordiscan detail
-}
-
-#[derive(Serialize)]
-struct WalletItem {
-    pubkey: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    inscription_ids: Vec<String>,
-    inscription_count: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    runes: Vec<RuneHolding>,
-    runes_count: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    alkanes: Vec<AlkaneHolding>,
-    alkanes_count: usize,
+    ordiscan_url: Option<String>,     
 }
 
 #[derive(Serialize, Clone)]
@@ -101,6 +86,45 @@ struct RuneHolding {
     balance: String,
 }
 
+#[derive(Serialize, Clone)]
+struct Brc20Holding {
+    ticker: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decimals: Option<u32>,
+    available: String,
+    transferable: String,
+    overall: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_hr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transferable_hr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overall_hr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unisat_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct WalletItem {
+    pubkey: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    inscription_ids: Vec<String>,
+    inscription_count: usize,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    runes: Vec<RuneHolding>,
+    runes_count: usize,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    alkanes: Vec<AlkaneHolding>,
+    alkanes_count: usize,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    brc20: Vec<Brc20Holding>,
+    brc20_count: usize,
+}
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
@@ -109,11 +133,30 @@ async fn main() -> Result<()> {
     let client = build_client(args.api_key.clone())?;
     let base = base_for_network(&args.base_url, &args.network)?;
     let verbose = args.verbose;
+    let brc20_height: Option<u64> = if args.with_brc20 {
+        if let Some(h) = args.brc20_block_height {
+            Some(h)
+        } else {
+            match get_tip_height(&client, &base, verbose, &args.api_key).await {
+                Ok(h) => Some(h),
+                Err(e) => { if verbose { eprintln!("tip height fetch failed: {}", e); } None }
+            }
+        }
+    } else { None };
+
+    if verbose { eprintln!("Using BRC-20 block_height = {:?}", brc20_height); }
+
 
     // ---------- SINGLE ADDRESS ----------
     if let Some(addr) = args.address.as_deref() {
         Address::from_str(addr).context("--address is not a valid Bitcoin address")?;
-        let item = scan_address(&client, &base, addr, verbose, &args.api_key, args.with_runes,&args.unisat_base, &args.unisat_api_key, args.with_alkanes).await?;
+        let item = scan_address(
+            &client, &base, addr, verbose, &args.api_key, 
+            args.with_runes,
+            &args.unisat_base, &args.unisat_api_key, args.with_alkanes,
+            args.with_brc20,
+            brc20_height,  
+        ).await?;
         write_and_print(&args.output, vec![item])?;
         return Ok(());
     }
@@ -171,7 +214,27 @@ async fn main() -> Result<()> {
         } else { Vec::new() };
         let alkanes_count = alkanes.len();
 
-        if inscription_count > 0 || runes_count > 0 || alkanes_count > 0 {
+        let mut brc20 = if args.with_brc20 {
+            get_brc20_balances(&client, &base, &addr, verbose, &args.api_key, brc20_height)
+                .await
+                .unwrap_or_default()
+        } else { Vec::new() };
+
+        if brc20.is_empty() {
+            let alt = get_brc20_balances_unisat_fallback(
+                &client, &args.unisat_base, &addr, verbose, &args.unisat_api_key, brc20_height
+            ).await.unwrap_or_default();
+
+            if !alt.is_empty() {
+                if verbose { eprintln!("Using UniSat fallback balances for {}", &addr); }
+                brc20 = alt;
+            }
+        }
+
+
+        let brc20_count = brc20.len();
+
+        if inscription_count > 0 || runes_count > 0 || alkanes_count > 0 || brc20_count > 0 {
             wallets.push(WalletItem {
                 pubkey: addr,
                 inscription_ids: ids,
@@ -180,6 +243,8 @@ async fn main() -> Result<()> {
                 runes_count,
                 alkanes,         
                 alkanes_count,   
+                brc20,        
+                brc20_count,   
             });
             misses = 0;
         } else {
@@ -206,10 +271,11 @@ async fn scan_address(
     verbose: bool,
     api_key: &Option<String>,
     with_runes: bool,
-    // add these params so main() can pass them down
     unisat_base: &str,
     unisat_api_key: &Option<String>,
     with_alkanes: bool,
+    with_brc20: bool,  
+    brc20_height: Option<u64>, 
 ) -> Result<WalletItem> {
     let inscription_ids = get_inscription_ids(client, base_url, address, verbose, api_key)
         .await
@@ -230,19 +296,46 @@ async fn scan_address(
     } else { Vec::new() };
     let alkanes_count = alkanes.len();
 
-    Ok(WalletItem {
-        pubkey: address.to_string(),
-        inscription_ids,
-        inscription_count,
-        runes,
-        runes_count,
-        alkanes,
-        alkanes_count,
-    })
+    let mut brc20 = if with_brc20 {
+        get_brc20_balances(client, base_url, address, verbose, api_key, brc20_height)
+            .await
+            .unwrap_or_default()
+    } else { Vec::new() };
+
+    if brc20.is_empty() {
+        let alt = get_brc20_balances_unisat_fallback(
+            client, unisat_base, address, verbose, unisat_api_key, brc20_height
+        ).await.unwrap_or_default();
+
+        if !alt.is_empty() {
+            if verbose { eprintln!("Using UniSat fallback balances for {}", address); }
+            brc20 = alt;
+        }
+    }
+
+
+    let brc20_count = brc20.len();
+
+Ok(WalletItem {
+    pubkey: address.to_string(),
+    inscription_ids,
+    inscription_count,
+    runes,
+    runes_count,
+    alkanes,
+    alkanes_count,
+    brc20,           
+    brc20_count,       
+})
+
 }
 
 
 // -------- utils --------
+fn unisat_brc20_url(tick: &str) -> String {
+    format!("https://unisat.io/market/brc20?tick={}", tick.to_lowercase())
+}
+
 fn base_for_network(base: &str, network: &str) -> Result<String> {
     let b = base.trim_end_matches('/').to_string();
     match network.to_lowercase().as_str() {
@@ -252,8 +345,36 @@ fn base_for_network(base: &str, network: &str) -> Result<String> {
     }
 }
 
+static DEC_CACHE: Lazy<Mutex<HashMap<String, Option<u32>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+
+// NEW: fetch current chain tip height from Hiro Ordinals API
+async fn get_tip_height(
+    client: &Client,
+    base: &str,
+    verbose: bool,
+    api_key: &Option<String>,
+) -> Result<u64> {
+    let base = base.trim_end_matches('/');
+    // per docs: GET /ordinals/v1/ returns status incl. block_height
+    let url = format!("{}/ordinals/v1/", base);
+
+    let mut req = client.get(&url);
+    if let Some(key) = api_key {
+        req = req.header("x-api-key", key);
+    }
+
+    let v = get_json_with_backoff(req, 3, verbose).await?;
+    if verbose { eprintln!("ORDINALS status: {:#}", v); }
+
+    v.get("block_height")
+        .and_then(|x| x.as_u64())
+        .context("missing block_height in ordinals status")
+}
+
 fn find_alkane_id_fallback(item: &serde_json::Value) -> Option<String> {
-    // try common keys first
+
     let candidates = [
         "alkaneId", "tokenId", "id", "aid", "index", "tickId", "alkane_id", "token_id",
     ];
@@ -263,7 +384,6 @@ fn find_alkane_id_fallback(item: &serde_json::Value) -> Option<String> {
         }
     }
 
-    // brute-force: scan all string fields for something like "number:number"
     let re = regex::Regex::new(r"^\d+:\d+$").ok()?;
     if let Some(obj) = item.as_object() {
         for (_k, v) in obj {
@@ -347,10 +467,17 @@ fn human_amount_str(amount_units: &str, decimals: u32) -> String {
         let split = s.len() - d;
         s.insert(split, '.');
     }
-    // trim trailing zeros and any trailing dot
     while s.contains('.') && s.ends_with('0') { s.pop(); }
     if s.ends_with('.') { s.pop(); }
     s
+}
+
+fn to_hr_maybe_integer(s: &str, decimals: u32) -> String {
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        human_amount_str(s, decimals)
+    } else {
+        s.to_string()
+    }
 }
 
 // ---------- HTTP w/ retry ----------
@@ -642,6 +769,266 @@ async fn get_alkanes_balances_unisat(
     }
 
     out.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    Ok(out)
+}
+
+// GET /ordinals/v1/brc-20/tokens/{ticker} -> decimals (cached globally)
+async fn get_brc20_token_decimals(
+    client: &Client,
+    base: &str,
+    ticker: &str,
+    verbose: bool,
+    api_key: &Option<String>,
+) -> Result<Option<u32>> {
+    let base = base.trim_end_matches('/');
+    let t = ticker.to_lowercase();
+
+    // global cache first
+    if let Some(hit) = DEC_CACHE.lock().unwrap().get(&t).cloned() {
+        return Ok(hit);
+    }
+
+    let url = format!("{}/ordinals/v1/brc-20/tokens/{}", base, ticker);
+    let mut req = client.get(&url);
+    if let Some(key) = api_key { req = req.header("x-api-key", key); }
+
+    // be a bit more patient here than the default
+    let dec = match get_json_with_backoff(req, 5, verbose).await {
+        Ok(v) => v.get("token")
+            .and_then(|t| t.get("decimals"))
+            .and_then(|d| d.as_u64())
+            .map(|n| n as u32),
+        Err(e) => {
+            if verbose { eprintln!("token decimals lookup failed for {}: {}", ticker, e); }
+            None
+        }
+    };
+
+    DEC_CACHE.lock().unwrap().insert(t, dec);
+    Ok(dec)
+}
+
+
+// GET /ordinals/v1/brc-20/balances/{address}
+async fn get_brc20_balances(
+    client: &Client,
+    base: &str,
+    address: &str,
+    verbose: bool,
+    api_key: &Option<String>,
+    block_height: Option<u64>,
+) -> Result<Vec<Brc20Holding>> {
+    let base = base.trim_end_matches('/');
+    let url = format!("{}/ordinals/v1/brc-20/balances/{}", base, address);
+
+    let mut out: Vec<Brc20Holding> = Vec::new();
+    let mut offset: u32 = 0;
+    const LIMIT: u32 = 60;
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // 👉 make the closure return an async *move* block and give it owned values
+    let fetch_page = |use_height: bool, offset: u32| {
+        let client = client.clone();          // reqwest::Client is cheap to clone
+        let api_key = api_key.clone();
+        let url = url.clone();
+        async move {
+            let mut q: Vec<(&str, String)> = vec![
+                ("offset", offset.to_string()),
+                ("limit",  LIMIT.to_string()),
+            ];
+            if use_height {
+                if let Some(h) = block_height { q.push(("block_height", h.to_string())); }
+            }
+            let mut req = client.get(&url).query(&q);
+            if let Some(key) = api_key { req = req.header("x-api-key", key); }
+            get_json_with_backoff(req, 5, verbose).await
+        }
+    };
+
+    let mut use_height = block_height.is_some();
+    let mut tried_no_height_once = false;
+
+    loop {
+        let page = match fetch_page(use_height, offset).await {
+            Ok(v) => v,
+            Err(e) => { if verbose { eprintln!("BRC20 balances error for {}: {}", address, e); } break; }
+        };
+
+        if verbose { eprintln!("BRC20 balances @offset {} (height={}): {:#}", offset, use_height, page); }
+
+        let total   = page.get("total").and_then(|t| t.as_u64()).unwrap_or(0);
+        let results = page.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+
+        if results.is_empty() && use_height && !tried_no_height_once && offset == 0 {
+            if verbose { eprintln!("BRC20 empty with height for {}; retrying without height", address); }
+            use_height = false;
+            tried_no_height_once = true;
+            continue;
+        }
+        if results.is_empty() { break; }
+
+        for item in results {
+            let ticker = item.get("ticker").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            if ticker.is_empty() { continue; }
+
+            let available    = item.get("available_balance").and_then(|x| x.as_str()).unwrap_or("0").to_string();
+            let transferable = item.get("transferrable_balance")
+                                   .or_else(|| item.get("transferable_balance"))
+                                   .and_then(|x| x.as_str()).unwrap_or("0").to_string();
+            let overall      = item.get("overall_balance").and_then(|x| x.as_str()).unwrap_or("0").to_string();
+
+            let decimals = get_brc20_token_decimals(client, base, &ticker, verbose, api_key).await?;
+
+            let (available_hr, transferable_hr, overall_hr) = if let Some(d) = decimals {
+                (
+                    Some(to_hr_maybe_integer(&available, d)),
+                    Some(to_hr_maybe_integer(&transferable, d)),
+                    Some(to_hr_maybe_integer(&overall, d)),
+                )
+            } else { (None, None, None) };
+
+            out.push(Brc20Holding {
+                ticker: ticker.clone(),
+                decimals,
+                available,
+                transferable,
+                overall,
+                available_hr,
+                transferable_hr,
+                overall_hr,
+                unisat_url: Some(unisat_brc20_url(&ticker)),
+            });
+        }
+
+        offset += LIMIT;
+        if total > 0 && (offset as u64) >= total { break; }
+    }
+
+    out.sort_by(|a, b| a.ticker.cmp(&b.ticker));
+    Ok(out)
+}
+
+async fn get_brc20_balances_unisat_fallback(
+    client: &Client,
+    unisat_base: &str,
+    address: &str,
+    verbose: bool,
+    unisat_api_key: &Option<String>,
+    block_height: Option<u64>,
+) -> Result<Vec<Brc20Holding>> {
+
+    let base = unisat_base.trim_end_matches('/');
+
+    // helper to fetch either summary-by-height or plain summary
+    async fn fetch_summary(
+        client: &Client,
+        base: &str,
+        address: &str,
+        api_key: &Option<String>,
+        start: u32,
+        limit: u32,
+        height: Option<u64>,
+        verbose: bool,
+    ) -> Result<Value> {
+        let url = match height {
+            Some(h) => format!("{}/v1/indexer/address/{}/brc20/summary-by-height/{}", base, address, h),
+            None    => format!("{}/v1/indexer/address/{}/brc20/summary", base, address),
+        };
+
+        let mut req = client
+            .get(&url)
+            .query(&[("start", start.to_string()), ("limit", limit.to_string())])
+            .header(header::ACCEPT, "application/json");
+
+        if let Some(key) = api_key {
+            req = req.header("Authorization", format!("Bearer {}", key));
+        }
+
+        // UniSat can be spiky too; give it 5 tries
+        get_json_with_backoff(req, 5, verbose).await
+    }
+
+    let mut out: Vec<Brc20Holding> = Vec::new();
+    let mut start: u32 = 0;
+    const LIMIT: u32 = 100;
+
+    // first try with height (if provided), otherwise plain summary
+    let mut use_height = block_height.is_some();
+    let mut tried_plain_once = false;
+
+    loop {
+        let v = match fetch_summary(client, base, address, unisat_api_key, start, LIMIT, if use_height { block_height } else { None }, verbose).await {
+            Ok(v) => v,
+            Err(e) => { if verbose { eprintln!("UniSat BRC-20 summary error for {}: {}", address, e); } break; }
+        };
+
+        if verbose { eprintln!("UNISAT BRC-20 summary start={} (height={:?}) for {}: {:#}", start, if use_height { block_height } else { None }, address, v); }
+
+        let detail = v.get("data")
+            .and_then(|d| d.get("detail"))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        // if height snapshot is empty, try plain summary once
+        if detail.is_empty() && use_height && !tried_plain_once && start == 0 {
+            if verbose { eprintln!("UniSat summary empty at height for {}; retrying plain summary", address); }
+            use_height = false;
+            tried_plain_once = true;
+            continue;
+        }
+
+        if detail.is_empty() { break; }
+
+        for it in detail {
+            let ticker = it.get("ticker").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            if ticker.is_empty() { continue; }
+
+            let overall = it.get("overallBalance").and_then(|x| x.as_str()).unwrap_or("0").to_string();
+            let available = it.get("availableBalance").and_then(|x| x.as_str()).unwrap_or("0").to_string();
+            let transferable = it.get("transferableBalance")
+                .or_else(|| it.get("transferrable_balance"))
+                .or_else(|| it.get("transferable_balance"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("0")
+                .to_string();
+
+            let decimals = it.get("decimal")
+                .or_else(|| it.get("decimals"))
+                .or_else(|| it.get("divisibility"))
+                .and_then(|x| x.as_u64())
+                .map(|n| n as u32);
+
+            let (available_hr, transferable_hr, overall_hr) = if let Some(d) = decimals {
+                (
+                    Some(to_hr_maybe_integer(&available, d)),
+                    Some(to_hr_maybe_integer(&transferable, d)),
+                    Some(to_hr_maybe_integer(&overall, d)),
+                )
+            } else { (None, None, None) };
+
+            out.push(Brc20Holding {
+                ticker: ticker.clone(),
+                decimals,
+                available,
+                transferable,
+                overall,
+                available_hr,
+                transferable_hr,
+                overall_hr,
+                unisat_url: Some(unisat_brc20_url(&ticker)),
+            });
+        }
+
+        start += LIMIT;
+
+        if let Some(total) = v.get("data").and_then(|d| d.get("total")).and_then(|t| t.as_u64()) {
+            if (start as u64) >= total { break; }
+        }
+    }
+
+    out.sort_by(|a, b| a.ticker.cmp(&b.ticker));
     Ok(out)
 }
 

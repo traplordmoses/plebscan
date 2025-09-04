@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}Plebscan Dashboard{% endblock %}
+
+{% block content %}
+<!-- Confetti JS -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
+
+<style>
+ /* Rune cards: keep a stable two-column header that wraps gracefully */
+ .rune-card{background:#222;color:#fff;border:0}
+ .rune-row{display:flex;align-items:flex-start;gap:.75rem;flex-wrap:wrap}
+ .rune-left{flex:1 1 160px;min-width:160px}
+ .rune-right{flex:0 0 auto;min-width:180px;text-align:right;line-height:1.2}
+ .rune-right .small{white-space:nowrap}
+ .rune-bag{margin-top:.5rem;color:#9aa0a6}
+ .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+
+<div class="container py-4">
+  <!-- SUMMARY -->
+  <div class="mb-4">
+    <div class="card" style="background-color:#222">
+      <div class="card-header" style="background-color:#1c1c1c;">
+        <h1 class="h3 mb-2" style="color:#c6c6c6; text-transform:uppercase; letter-spacing:1px; font-size:18px; margin-top:0.5rem;">
+          XPUB Portfolio Summary
+        </h1>
+      </div>
+      <div class="card-body">
+        {# counts and rune sums #}
+        {% set total_runes = (wallets | map(attribute='runes_count',  default=0) | sum) %}
+        {% set runes_floor_btc = (wallets | map(attribute='runes_sum_btc', default=0) | sum | float) %}
+        {% set runes_floor_usd = (wallets | map(attribute='runes_sum_usd', default=0) | sum | float) %}
+
+        {# alkanes #}
+        {% set total_alkanes      = (wallets | map(attribute='alkanes_count',   default=0) | sum) %}
+        {% set alkanes_floor_btc  = (wallets | map(attribute='alkanes_sum_btc', default=0) | sum | float) %}
+        {% set alkanes_floor_usd  = (wallets | map(attribute='alkanes_sum_usd', default=0) | sum | float) %}
+
+        {# BRC-20 count (works across list-or-count shapes) #}
+        {% set brc = namespace(total=0) %}
+        {% for _w in wallets %}
+          {% set brc.total = brc.total + (_w.brc20|length
+              if _w.brc20 is defined and _w.brc20 is not none
+              else (_w.brc20_count|default(0))) %}
+        {% endfor %}
+        {% set total_brc20 = brc.total %}
+
+        {# combined totals (BRC-20 not priced here) #}
+        {% set combined_btc = (total_floor_btc | default(0) | float)
+                              + (runes_floor_btc   | default(0) | float)
+                              + (alkanes_floor_btc | default(0) | float) %}
+        {% set combined_usd = (total_floor_usd | default(0) | float)
+                              + (runes_floor_usd   | default(0) | float)
+                              + (alkanes_floor_usd | default(0) | float) %}
+
+        {# ---- Build the headline pieces so we can render with commas and an & before the last item ---- #}
+        {% set ns = namespace(parts=[]) %}
+        {% set _ = ns.parts.append(total_inscriptions ~ ' ' ~ ('ordinal' if total_inscriptions == 1 else 'ordinals')) %}
+        {% if total_brc20 and total_brc20 > 0 %}
+          {% set _ = ns.parts.append(total_brc20 ~ ' ' ~ ('brc20' if total_brc20 == 1 else 'brc20s')) %}
+        {% endif %}
+        {% if total_runes and total_runes > 0 %}
+          {% set _ = ns.parts.append(total_runes ~ ' ' ~ ('rune' if total_runes == 1 else 'runes')) %}
+        {% endif %}
+        {% if total_alkanes and total_alkanes > 0 %}
+          {% set _ = ns.parts.append(total_alkanes ~ ' ' ~ ('alkane' if total_alkanes == 1 else 'alkanes')) %}
+        {% endif %}
+        {% set cnt = ns.parts|length %}
+
+        <p class="lead" style="font-size:36px">
+          {% if cnt <= 1 %}
+            {{ ns.parts[0] if cnt == 1 else '0 ordinals' }}
+          {% else %}
+            {{ ns.parts[:cnt-1]|join(', ') }} &amp; {{ ns.parts[cnt-1] }}
+          {% endif %}
+          across {{ total_wallets }} {{ 'wallet' if total_wallets == 1 else 'wallets' }}.
+        </p>
+
+        <p class="lead" style="font-size:36px">
+          Total floor: {{ "{:,.6f}".format(combined_btc) }} BTC
+          <span class="badge text-bg-success">(${{ "{:,.2f}".format(combined_usd) }})</span>
+        </p>
+
+        <div class="text-muted" style="font-size:20px">
+          Ordinals: {{ "{:,.6f}".format(total_floor_btc|float) }} BTC
+        </div>
+        <div class="text-muted" style="font-size:20px">
+          BRC-20s: {{ "{:,.6f}".format(0.0) }} BTC
+        </div>
+        <div class="text-muted" style="font-size:20px">
+          Runes: {{ "{:,.6f}".format(runes_floor_btc|float) }} BTC
+        </div>
+        <div class="text-muted" style="font-size:20px">
+          Alkanes: {{ "{:,.6f}".format(alkanes_floor_btc|float) }} BTC
+        </div>
+      </div>
+      <hr>
+    </div>
+  </div>
+
+  <!-- PER-WALLET BREAKDOWN -->
+  {% for w in wallets %}
+  <div class="card mb-5 shadow-lg" style="background-color:#333; color:white;">
+
+    <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center"
+         style="background-color:#1e1e1e; color:#fff; padding:1rem 1.25rem; border-bottom:2px solid #444;">
+
+      <!-- Left Side -->
+      {% set brc20_len = (w.brc20|length if w.brc20 is defined and w.brc20 is not none else (w.brc20_count|default(0))) %}
+      <div>
+        <h5 class="mb-3 fw-bold" style="font-size:28px">
+          Wallet {{ loop.index }}
+          <span class="text-info" style="font-size:0.85em;">{{ w.pubkey }}</span>
+        </h5>
+
+        <div class="mb-3">
+          <a href="https://ordiscan.com/address/{{ w.pubkey }}" target="_blank" class="me-2 text-decoration-none">🔗 Ordiscan</a>
+          <a href="https://mempool.space/address/{{ w.pubkey }}" target="_blank" class="text-decoration-none">🔗 Mempool</a>
+        </div>
+
+        <div class="text-muted" style="font-size:24px">
+          {{ w.inscription_count }} ordinals –
+          <span class="text-success fw-semibold">{{ w.floor_sum_btc }} BTC</span>
+          (≈ ${{ "{:,.2f}".format(w.floor_sum_usd) }})
+        </div>
+
+        {% if brc20_len > 0 %}
+        <div class="mt-1">
+          <span class="text-muted" style="font-size:24px">
+            {{ brc20_len }} {{ 'brc20' if brc20_len == 1 else 'brc20s' }}
+          </span>
+        </div>
+        {% endif %}
+
+        {% if w.runes_count and w.runes_count > 0 %}
+        <div class="mt-2">
+          <span class="text-muted" style="font-size:24px">
+            {{ w.runes_count }} {{ 'rune' if w.runes_count == 1 else 'runes' }} —
+            <span class="text-info fw-semibold">{{ (w.runes_sum_btc|default(0))|float }} BTC</span>
+            (≈ ${{ "{:,.2f}".format((w.runes_sum_usd|default(0))|float) }})
+          </span>
+        </div>
+        {% endif %}
+
+        {% if w.alkanes_count and w.alkanes_count > 0 %}
+        <div class="mt-1">
+          <span class="text-muted" style="font-size:24px">
+            {{ w.alkanes_count }} {{ 'alkane' if w.alkanes_count == 1 else 'alkanes' }}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Right Side: Quick counts -->
+      <div class="mt-3 mt-md-0">
+        <span class="badge bg-info text-dark me-2">
+          {{ w.inscription_count }} {{ 'ordinal' if w.inscription_count == 1 else 'ordinals' }}
+        </span>
+
+        {% if brc20_len > 0 %}
+        <span class="badge bg-primary me-2">
+          {{ brc20_len }} {{ 'BRC-20' if brc20_len == 1 else 'BRC-20s' }}
+        </span>
+        {% endif %}
+
+        {% if w.runes_count and w.runes_count > 0 %}
+        <span class="badge bg-secondary me-2">
+          {{ w.runes_count }} {{ 'rune' if w.runes_count == 1 else 'runes' }}
+        </span>
+        {% endif %}
+
+        {% if w.alkanes and w.alkanes|length > 0 %}
+        <span class="badge bg-warning text-dark">
+          {{ w.alkanes|length }} {{ 'alkane' if w.alkanes|length == 1 else 'alkanes' }}
+        </span>
+        {% endif %}
+      </div>
+    </div> <!-- end card-header -->
+
+    <!-- Card Body -->
+    <div class="card-body" style="background-color:#111">
+      <div class="row">
+
+        {% for tok in w.tokens %}
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3 mb-4">
+          <div class="card h-100 shadow-sm">
+            <a href="https://magiceden.io/ordinals/item-details/{{ tok.id }}" target="_blank">
+              {# KEEPING YOUR ORIGINAL IMAGE LOGIC #}
+              {% set img_url = tok.contentURI or tok.contentPreviewURI %}
+              <img
+                src="{{ img_url if img_url else url_for('static', filename='placeholder.png') }}"
+                class="card-img-top img-fluid"
+                alt="{{ tok.displayName }}"
+                onerror="this.onerror=null; this.src='/static/placeholder-2.png';"
+              >
+            </a>
+
+            <div class="card-body p-2" style="background-color:#222">
+              <p class="card-text mb-1"><strong>{{ tok.displayName }}</strong></p>
+              <p class="mb-0">
+                <small class="text-muted">
+                  {{ tok.collection.name if tok.collection is defined else tok.collectionSymbol }}
+                </small>
+              </p>
+              <p class="mb-0">
+                <small>Floor: {{ tok.floorPrice }} BTC (≈ ${{ "{:,.2f}".format(tok.floorUSD) }})</small>
+              </p>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+      </div> <!-- end inscriptions row -->
+
+            <!-- BRC-20 GRID (separate section, not nested under Alkanes) -->
+      {% if w.brc20 is defined and w.brc20 is not none and w.brc20|length > 0 %}
+      <hr class="my-4" style="border-color:#444;">
+      <h6 class="text-uppercase text-muted mb-3">BRC-20</h6>
+
+      <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+        {% for b in w.brc20 %}
+        <div class="col">
+          <div class="card h-100 shadow-sm border-0" style="background-color:#222; color:#fff;">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="fw-semibold text-truncate" title="{{ (b.ticker or '')|upper }}">
+                  {% if b.unisat_url %}
+                    <a class="text-info text-decoration-none" target="_blank" href="{{ b.unisat_url }}">
+                      {{ (b.ticker or '')|upper }}
+                    </a>
+                  {% else %}
+                    {{ (b.ticker or '')|upper }}
+                  {% endif %}
+                </div>
+                {% if b.unisat_url %}
+                <a class="small text-decoration-none text-info text-nowrap" target="_blank" href="{{ b.unisat_url }}">
+                  Unisat ↗
+                </a>
+                {% endif %}
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted text-nowrap">Balance</span>
+                <span class="fw-semibold text-nowrap">
+                  {{ b.balance_display or b.overall or b.available or b.overall_hr or b.available_hr }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- RUNES GRID -->
+      {% if w.runes and w.runes|length > 0 %}
+      <hr class="my-4" style="border-color:#444;">
+      <h6 class="text-uppercase text-muted mb-3">Runes</h6>
+
+      <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+        {% for r in w.runes %}
+        <div class="col">
+          <div class="card h-100 shadow-sm border-0" style="background-color:#222; color:#fff;">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="fw-semibold text-truncate" title="{{ r.spaced_name or r.name }}">
+                  {{ r.spaced_name or r.name }}
+                </div>
+                {% if r.me_url %}
+                <a class="small text-decoration-none text-info text-nowrap" target="_blank" href="{{ r.me_url }}">
+                  Magic Eden ↗
+                </a>
+                {% endif %}
+              </div>
+              <div class="d-flex justify-content-between small mb-1">
+                <span class="text-muted text-nowrap">Balance</span>
+                <span class="fw-semibold text-nowrap">{{ r.balance|default(0) }}</span>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted text-nowrap">Floor</span>
+                <span class="fw-semibold text-nowrap">
+                  {% set fd = (r.floor_display or (('%.8f' % (r.floor_btc|default(0.0)|float)) ~ ' BTC')) %}
+                  {% set parts = fd.split(' ', 1) %}
+                  {% if parts|length == 2 %}
+                    {% set num = parts[0]|replace(',', '') %}
+                    {% set rest = parts[1] %}
+                    {% set num4 = "{:,.4f}".format(num|float) %}
+                    {% set fd4 = num4 ~ ' ' ~ rest %}
+                  {% else %}
+                    {% set num4 = "{:,.4f}".format((fd|replace(',', ''))|float) %}
+                    {% set fd4 = num4 %}
+                  {% endif %}
+                  {% if 'sat' in fd4|lower or 'btc' in fd4|lower %}
+                    {{ fd4 }}
+                  {% else %}
+                    {{ fd4 }} <span class="text-muted">sats/</span>{{ r.symbol }}
+                  {% endif %}
+                </span>
+              </div>
+              <div class="d-flex justify-content-between small mt-1">
+                <span class="text-muted text-nowrap">Value at Floor</span>
+                <span class="fw-semibold text-nowrap">
+                  {{ "{:,.8f}".format((r.bag_btc or 0)|float) }} BTC
+                  (≈ ${{ "{:,.2f}".format((r.bag_usd or 0)|float) }})
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- ALKANES GRID -->
+      {% if w.alkanes and w.alkanes|length > 0 %}
+      <hr class="my-4" style="border-color:#444;">
+      <h6 class="text-uppercase text-muted mb-3">Alkanes</h6>
+
+      <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+        {% for a in w.alkanes %}
+        <div class="col">
+          <div class="card h-100 shadow-sm border-0" style="background-color:#222; color:#fff;">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="fw-semibold text-truncate" title="{{ a.symbol or a.id }}">
+                  {% if a.ordiscan_url %}
+                    <a class="text-info text-decoration-none" target="_blank" href="{{ a.ordiscan_url }}">
+                      {{ a.symbol or a.id }}
+                    </a>
+                  {% else %}
+                    {{ a.symbol or a.id }}
+                  {% endif %}
+                </div>
+                {% if a.ordiscan_url %}
+                <a class="small text-decoration-none text-info text-nowrap" target="_blank" href="{{ a.ordiscan_url }}">
+                  Ordiscan ↗
+                </a>
+                {% endif %}
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted text-nowrap">Balance</span>
+                <span class="fw-semibold text-nowrap">{{ a.amount_hr or a.amount }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div> <!-- /card-body -->
+  </div> <!-- /wallet card -->
+  {% endfor %}
+</div> <!-- /container -->
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const duration = 1500, end = Date.now() + duration;
+  (function frame() {
+    confetti({ particleCount: 80, angle: Math.random()*360, spread: 90, startVelocity: 30, gravity: 1, ticks: 120, scalar: 1, origin: { x: Math.random(), y: Math.random() - 0.2 }});
+    if (Date.now() < end) requestAnimationFrame(frame);
+  })();
+
+  const sound = new Audio('{{ url_for("static", filename="victory.mp3") }}');
+  sound.volume = 0.5;
+  sound.play().catch(() => {
+    const unlock = () => {
+      sound.play().catch(() => {
+        const btn = document.createElement('button');
+        btn.textContent = 'Enable sound';
+        btn.style.position = 'fixed'; btn.style.bottom = '16px'; btn.style.right = '16px';
+        btn.style.zIndex = '9999'; btn.style.padding = '8px 12px'; btn.style.borderRadius = '10px';
+        btn.style.border = 'none'; btn.style.background = '#1e90ff'; btn.style.color = '#fff';
+        btn.style.fontSize = '14px'; btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+        btn.addEventListener('click', () => { sound.play().catch(()=>{}); btn.remove(); });
+        document.body.appendChild(btn);
+      });
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+  });
+});
+</script>
+{% endblock %}

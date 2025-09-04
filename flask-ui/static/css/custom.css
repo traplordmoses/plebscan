@@ -1,0 +1,16 @@
+/* static/css/custom.css */
+
+/* Make the card images a bit rounded */
+.card-img-top {
+  border-radius: 0.5rem;
+}
+
+/* Change the dashboard background */
+body {
+  background-color: #f7f9fc;
+}
+
+/* Adjust the spacing around wallet headers */
+section.wallet {
+  margin-bottom: 2rem;
+}

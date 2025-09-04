@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Plebscan Home{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="card">
+    <div class="card-body" style="background: #222; padding: 2rem;">
+      <h1 class="display-4 mb-4 text-primary text-white">Plebscan: View all ordinals and inscriptions associated with your xpub</h1>
+
+      <form method="post" class="mb-4" id="xpub-form" autocomplete="off" onsubmit="showLoading();">
+        <div class="mb-3">
+          <label for="xpub" class="form-label text-white">Extended Public Key (xpub/tpub)</label>
+          <input
+            type="text"
+            name="xpub"
+            id="xpub"
+            class="form-control"
+            placeholder="Enter your XPUB or TPUB"
+            required
+          >
+        </div>
+        <div class="mb-3">
+          <label for="purpose" class="form-label text-white">Derivation Path</label>
+          <select name="purpose" id="purpose" class="form-select" required>
+            <option value="" disabled selected>Select a derivation path</option>
+            <option value="p44">BIP-44 (Legacy, P2PKH)</option>
+            <option value="p49">BIP-49 (Nested SegWit, P2SH-P2WPKH)</option>
+            <option value="p84">BIP-84 (Native SegWit, P2WPKH)</option>
+            <option value="p86">BIP-86 (Taproot, P2TR)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="max" class="form-label text-white">Max Addresses to Scan</label>
+          <input
+            type="number"
+            name="max"
+            id="max"
+            class="form-control"
+            value="200"
+            min="1"
+            required
+          >
+        </div>
+        <div class="mb-3">
+          <label for="network" class="form-label text-white">Network</label>
+          <select name="network" id="network" class="form-select">
+            <option value="bitcoin">Bitcoin (Mainnet)</option>
+            <option value="testnet">Testnet</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="chain" class="form-label text-white">Chain (0 for receive, 1 for change)</label>
+          <input
+            type="number"
+            name="chain"
+            id="chain"
+            class="form-control"
+            value="0"
+            min="0"
+            max="1"
+          >
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: auto; padding-left: 30px; padding-right: 30px; text-transform: uppercase; background-color: #cc4b87; border: 1px solid #cc4b87; font-weight: bold; letter-spacing: 1px;">Scan</button>
+      </form>
+
+      <!-- Spinner & magic message, hidden by default -->
+      <div id="loading-spinner" style="display:none;" class="text-center mt-4">
+        <div class="spinner-border text-primary" role="status" style="width: 4rem; height: 4rem;">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-white fs-5">🪄 Working our magic...<br>Gathering your inscriptions from Magic Eden & Hiro APIs.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showLoading() {
+  document.getElementById('xpub-form').style.display = 'none';
+  document.getElementById('loading-spinner').style.display = 'block';
+}
+</script>
+{% endblock %}

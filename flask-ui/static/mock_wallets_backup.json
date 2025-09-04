@@ -1,0 +1,28 @@
+{
+  "wallets": [
+    {
+      "pubkey": "bc1p...6q4f",
+      "inscription_ids": [
+        "37aa54c1ed74e081e03998ee705ecc5a45e921b4ff7985c112b56db23bde7525i0"
+      ],
+      "inscription_count": 1
+    },
+    {
+      "pubkey": "bc1p...ly9q",
+      "inscription_ids": [
+        "8e3b31370d09bb3b83577b48d4f610f8cc34bf894cc751a5a960e10de43688d6i0",
+        "ee028a262316b64a27c329baa6eeaa77d2ea26196c901567a2e3c84f4610c398i0"
+      ],
+      "inscription_count": 2
+    },
+    {
+      "pubkey": "bc1p...vu34",
+      "inscription_ids": [
+        "385b23f42c3c00f9016b1bd55af82c782c1b981392798075c2356bfa0bc4a340i0",
+        "32aed82595410bdafc4c362640b9803e93a061d720601524660878ac3306c9a1i0",
+        "d0e585c0c8113330f5c58eebbbfaf5afe595f1a35bac3716c65d54d8d8858b38i0"
+      ],
+      "inscription_count": 3
+    }
+  ]
+}
