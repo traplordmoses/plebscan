@@ -2,21 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{% block title %}Plebscan{% endblock %}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-LN+7fdVzj6u52u30Kp6M/trliBMCMKTyK833zpbD+pXdCLuTusPj697FH4R/5mcr" crossorigin="anonymous">
-<!--    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">-->
-
-    <!-- Darkly Bootswatch Theme -->
-    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5/dist/darkly/bootstrap.min.css" rel="stylesheet">
-
+  <title>{% block title %}plebscan{% endblock %}</title>
+  <!-- Darkly (includes Bootstrap) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootswatch@5/dist/darkly/bootstrap.min.css" rel="stylesheet">
   {% block head %}{% endblock %}
 </head>
 <body class="bg-dark">
 
-  <!-- NAVBAR HEADER -->
-  <nav class="navbar navbar-dark bg-primary">
+  <!-- NAVBAR -->
+  <nav class="navbar navbar-dark bg-dark navbar-expand-md mb-3">
     <div class="container">
-      <a class="navbar-brand" href="/">Plebscan</a>
+      <a class="navbar-brand" href="{{ url_for('index') }}">Plebscan</a>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+              aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"
+               href="{{ url_for('index') }}">Scan</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}"
+               href="{{ url_for('dashboard') }}">Dashboard</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'info' %}active{% endif %}"
+               href="{{ url_for('info') }}">Info / FAQ</a>
+          </li>
+          <!-- Optional external links -->
+          <li class="nav-item">
+            <a class="nav-link" target="_blank" href="https://github.com/traplordmoses/plebscan">GitHub ↗</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" target="_blank" href="https://x.com/yourhandle">Twitter ↗</a>
+          </li>
+        </ul>
+      </div>
     </div>
   </nav>
 
@@ -25,8 +50,7 @@
     {% block content %}{% endblock %}
   </div>
 
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js" integrity="sha384-ndDqU0Gzau9qJ1lfW4pNLlhNTkCfHzAVBReH9diLvGRem5+R9g2FzA8ZGN954O5Q" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

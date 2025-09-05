@@ -12,7 +12,6 @@ from flask import (
 )
 
 
-
 # Load env
 load_dotenv()
 
@@ -23,6 +22,19 @@ _floor_cache: dict[str, tuple[float, float]] = {}
 _btc_usd_cache: tuple[float, float] = (0, 0.0)
 _dashboard_cache: dict[str, tuple[float, str]] = {}
 _rune_cache: dict[str, tuple[float, dict]] = {}
+
+# --- dashboard HTML cache ---
+DASHBOARD_CACHE_TTL = int(os.getenv("DASHBOARD_CACHE_TTL", "60"))  # seconds
+
+def _dash_key(xpub: str, skip_runes: bool, deadline: float, sort: str) -> str:
+    # include everything that changes the rendered HTML
+    return f"{xpub}:{int(skip_runes)}:{deadline}:{sort}"
+
+def _invalidate_dashboard_cache(xpub: str):
+    # clear all cached variants for this xpub
+    for k in list(_dashboard_cache.keys()):
+        if k.startswith(f"{xpub}:"):
+            _dashboard_cache.pop(k, None)
 
 # --- Magic Eden throttle ---
 _ME_MIN_INTERVAL = float(os.getenv("ME_MIN_INTERVAL", "0.35"))  # seconds between ME calls
@@ -753,7 +765,7 @@ def index():
 
         # ---- canonicalize ----
         purpose_cli = purpose_in if purpose_in.startswith("p") else f"p{purpose_in}"
-        network_cli = "bitcoin" if network_in in {"bitcoin", "mainnet"} else "testnet"
+        network_cli = "mainnet" if network_in in {"bitcoin", "mainnet"} else "testnet"
 
         # ---- persist for /dashboard ----
         session["xpub"] = xpub
@@ -830,6 +842,9 @@ def index():
             session["plebscan_wallets"] = wallets
             if not wallets:
                 flash("No inscriptions found (or scan limit too low).", "info")
+
+            # new scan → invalidate any cached dashboard HTML for this xpub
+            _invalidate_dashboard_cache(xpub)
 
             return redirect(url_for("dashboard"))
 
@@ -1026,11 +1041,25 @@ def enrich_wallets(wallets, skip_runes, deadline):
             "brc20_count": brc_count,
         })
 
+        # count BRC-20 tickers with non-zero balance
+        def _has_balance(b):
+            try:
+                return float(str(b.get("overall") or b.get("available") or "0")) > 0
+            except Exception:
+                return False
+
+        summary["asset_count"] = (
+            summary["inscription_count"]
+            + summary["runes_count"]
+            + sum(1 for b in brc if _has_balance(b))
+        )
+
         total_btc += wallet_btc
         total_usd += wallet_usd
         enriched.append(summary)
 
-    enriched.sort(key=lambda x: x["floor_sum_btc"], reverse=True)
+
+    #enriched.sort(key=lambda x: x["floor_sum_btc"], reverse=True)
     return enriched, total_btc, total_usd
 
 
@@ -1045,9 +1074,12 @@ def dashboard():
     slow_runes = request.args.get("slow_runes") == "1"
     deadline = 6.0 if slow_runes else 2.5
 
+    sort = request.args.get("sort", "assets")  # assets | value
+    cache_key = _dash_key(xpub, skip_runes, deadline, sort)
+
     now = time.time()
-    cached_ts, cached_html = _dashboard_cache.get(xpub, (0, None))
-    if cached_html and now - cached_ts < 30:
+    cached_ts, cached_html = _dashboard_cache.get(cache_key, (0, None))
+    if cached_html and (now - cached_ts) < DASHBOARD_CACHE_TTL:
         return cached_html
 
     wallets = session.get("plebscan_wallets") or load_results_json_fallback()
@@ -1055,6 +1087,11 @@ def dashboard():
         flash("No wallets in session. Run a scan on the home page (or ensure results.json exists).", "info")
 
     enriched, total_btc, total_usd = enrich_wallets(wallets, skip_runes, deadline)
+
+    if sort == "assets":
+        enriched.sort(key=lambda w: w.get("asset_count", 0), reverse=True)
+    else:  # "value"
+        enriched.sort(key=lambda w: w.get("floor_sum_btc", 0.0), reverse=True)
 
     purpose_display = {
         "p44": "BIP-44 (Legacy, P2PKH)",
@@ -1073,8 +1110,9 @@ def dashboard():
         xpub=xpub,
         purpose=purpose_display,
     )
-    _dashboard_cache[xpub] = (now, html)
+    _dashboard_cache[cache_key] = (time.time(), html)
     return html
+
 
 @app.route("/dashboard_test")
 def dashboard_test():
@@ -1124,17 +1162,9 @@ def dashboard_test():
         total_floor_usd=round(total_floor_usd, 2),
     )
 
-@app.route("/debug/wallets_raw")
-def debug_wallets_raw():
-    wallets = session.get("plebscan_wallets") or load_results_json_fallback()
-    return jsonify({"wallets": wallets})
-
-
-@app.route("/debug/brc20")
-def debug_brc20():
-    addr = request.args.get("addr", "")
-    return jsonify({"addr": addr, "brc20": fetch_brc20_balances(addr)})
-
+@app.route("/info")
+def info():
+    return render_template("info.html")
 
 if __name__ == "__main__":
     # DEBUG: list routes

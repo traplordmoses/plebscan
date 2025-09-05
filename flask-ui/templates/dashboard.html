@@ -16,8 +16,16 @@
  .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 
-<div class="container py-4">
-  <!-- SUMMARY -->
+<div class="sort-toggle">
+  Sort:
+  {% if request.args.get('sort','assets') == 'assets' %}
+    <strong>Assets</strong> · <a href="{{ url_for('dashboard', sort='value') }}">Value</a>
+  {% else %}
+    <a href="{{ url_for('dashboard', sort='assets') }}">Assets</a> · <strong>Value</strong>
+  {% endif %}
+</div>
+
+<!-- SUMMARY -->
   <div class="mb-4">
     <div class="card" style="background-color:#222">
       <div class="card-header" style="background-color:#1c1c1c;">
@@ -212,7 +220,7 @@
 
       </div> <!-- end inscriptions row -->
 
-            <!-- BRC-20 GRID (separate section, not nested under Alkanes) -->
+      <!-- BRC-20 GRID (separate section, not nested under Alkanes) -->
       {% if w.brc20 is defined and w.brc20 is not none and w.brc20|length > 0 %}
       <hr class="my-4" style="border-color:#444;">
       <h6 class="text-uppercase text-muted mb-3">BRC-20</h6>
@@ -349,7 +357,6 @@
     </div> <!-- /card-body -->
   </div> <!-- /wallet card -->
   {% endfor %}
-</div> <!-- /container -->
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Info / FAQ — Plebscan{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <h1 class="mb-3">Plebscan — Info &amp; FAQ</h1>
+  <p class="text-muted">Read-only viewer for Bitcoin metaprotocol assets.</p>
+
+  <!-- Table of Contents -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title mb-3">On this page</h5>
+      <ul class="mb-0">
+        <li><a href="#what">What is Plebscan?</a></li>
+        <li><a href="#xpub">What’s an XPUB?</a></li>
+        <li><a href="#how">How Plebscan works</a></li>
+        <li><a href="#sparrow">How to get your XPUB (Sparrow)</a></li>
+        <li><a href="#verify">Verify it’s the right account</a></li>
+        <li><a href="#notes">Notes</a></li>
+        <li><a href="#privacy">Privacy &amp; data handling</a></li>
+        <li><a href="#accuracy">Accuracy &amp; sources</a></li>
+        <li><a href="#limits">Limitations &amp; edge cases</a></li>
+        <li><a href="#open-source">Open source</a></li>
+        <li><a href="#about">About &amp; thanks</a></li>
+        <li><a href="#donations">Donations</a></li>
+        <li><a href="#disclaimer">Disclaimer</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- What -->
+  <section id="what" class="mb-5">
+    <h2 class="h4">What is Plebscan?</h2>
+    <p>Plebscan is an experimental, read-only viewer for Bitcoin metaprotocol assets
+      (<strong>ordinals</strong>, <strong>runes</strong>, <strong>BRC-20</strong>, and <strong>alkanes</strong>),
+      found on addresses derived from your extended public key (<code>xpub</code>).</p>
+  </section>
+
+  <!-- XPUB -->
+  <section id="xpub" class="mb-5">
+    <h2 class="h4">What’s an XPUB?</h2>
+    <p>An extended public key (<em>xpub / ypub / zpub / trpub</em>) is a view-only key for one wallet account.
+       From it, software can derive that account’s public child keys and addresses (receive/change).</p>
+    <ul>
+      <li>It <strong>cannot</strong> reveal any private keys or spend your coins.</li>
+      <li>By design, BIP-32 only allows public → public derivation at the account level; private keys stay inside your wallet.</li>
+    </ul>
+    <div class="alert alert-warning mt-3" role="alert">
+      <strong>Privacy note:</strong> An XPUB exposes all current &amp; future addresses for that account.
+      Treat it as read-only but sensitive.
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="mb-5">
+    <h2 class="h4">How Plebscan works</h2>
+    <ol class="mb-3">
+      <li><strong>Enter your XPUB.</strong> If you don’t know it, follow the guide below.</li>
+      <li><strong>Choose your derivation path:</strong> BIP-44, 49, 84, or 86.</li>
+      <li><strong>Set “Max addresses to scan”.</strong> Limit is 200. The scanner stops early if it sees 20 empty addresses in a row (gap limit) and shows results.</li>
+      <li><strong>Select network.</strong> Use Bitcoin (mainnet) unless you’re testing.</li>
+      <li><strong>Chain.</strong> Leave as <code>0</code> (external/receive). <span class="text-muted">(Advanced: change addresses live on chain <code>1</code>.)</span></li>
+      <li><strong>Scan.</strong> Plebscan derives addresses from your XPUB, gathers data from public indexers, and displays detected ordinals, runes, BRC-20, and alkanes in one place.</li>
+    </ol>
+
+    <div class="card">
+      <div class="card-header">Why BIP-84 &amp; BIP-86 most of the time?</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li><strong>BIP-84</strong> (P2WPKH, <code>bc1q...</code>) — common for modern single-sig wallets; many users have funds here.</li>
+          <li><strong>BIP-86</strong> (Taproot, <code>bc1p...</code>) — most ordinals, runes, BRC-20, and alkanes activity uses Taproot, so scanning BIP-86 is essential.</li>
+        </ul>
+        <p class="mb-0 mt-2">Using <strong>84 + 86</strong> covers the vast majority of metaprotocol assets.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sparrow -->
+  <section id="sparrow" class="mb-5">
+    <h2 class="h4">How to get your XPUB (Sparrow)</h2>
+    <ol class="mb-3">
+      <li><strong>Download Sparrow</strong> from the official website.
+        <span class="text-warning">Only use the official site. Never paste your seed into a browser page.</span>
+      </li>
+      <li>Open Sparrow → <em>File → New Wallet</em>. Give it a name.</li>
+      <li><strong>Import your wallet (Xverse, UniSat, etc.).</strong> Choose “Use recovery phrase” and enter your 12/24 words.
+        If you used a BIP39 passphrase (25th word), turn on the passphrase toggle and enter it —
+        without it you’ll get a different wallet.</li>
+      <li><strong>Select Script Type = Taproot (P2TR).</strong> Sparrow auto-fills the derivation path as
+        <code>m/86'/0'/0'</code> (BIP-86, mainnet). Click <em>Create Wallet</em>.</li>
+      <li><strong>Copy your BIP-86 XPUB.</strong> Go to the wallet’s <em>Settings</em> tab → <em>Key Derivation</em> →
+        <em>Master XPUB (BIP-86)</em>. Click copy.</li>
+      <li><strong>Use it in Plebscan.</strong> Paste the XPUB, choose BIP-86 (Taproot), keep <em>chain = 0</em>, select Mainnet, set max addresses, and scan.</li>
+    </ol>
+  </section>
+
+  <!-- Verify -->
+  <section id="verify" class="mb-5">
+    <h2 class="h4">Verify it’s the right account</h2>
+    <p>In Sparrow, open the <em>Receive</em> tab and note the first address.
+       Plebscan should show the same first receive address for BIP-86 chain 0.
+       If it doesn’t match, re-check the script type/path or network.</p>
+  </section>
+
+  <!-- Notes -->
+  <section id="notes" class="mb-5">
+    <h2 class="h4">Notes</h2>
+    <ul>
+      <li>If your funds are on older addresses (<code>bc1q...</code> P2WPKH), repeat the import but pick
+          <strong>Native SegWit (P2WPKH)</strong> → <strong>BIP-84</strong> (<code>m/84'/0'/0'</code>) and use that XPUB in Plebscan.</li>
+      <li>For hardware wallets (Ledger/Trezor), choose <em>Connected Hardware Wallet</em> and let Sparrow read the BIP-86 XPUB directly from the device.</li>
+      <li>Keep your seed and passphrase offline and private; Plebscan only needs the XPUB (view-only).</li>
+    </ul>
+  </section>
+
+  <!-- Privacy -->
+  <section id="privacy" class="mb-5">
+    <h2 class="h4">Privacy &amp; data handling</h2>
+    <div class="alert alert-info" role="alert">
+      <p class="mb-2"><strong>Read-only.</strong> Plebscan never asks for private keys or seed phrases.</p>
+      <p class="mb-0"><strong>XPUB handling:</strong> Your XPUB is sent to the backend only to derive addresses for this scan.
+        We do not store or log XPUBs or derived addresses beyond the active request.
+        <em>(If you do store anything, replace this line with the exact retention policy.)</em>
+      </p>
+    </div>
+  </section>
+
+  <!-- Accuracy -->
+  <section id="accuracy" class="mb-5">
+    <h2 class="h4">Accuracy &amp; sources</h2>
+    <p>Results come from public indexers/APIs. Data may lag the chain briefly or differ across providers.
+       If something looks off, re-scan or verify in your wallet/block explorer.</p>
+  </section>
+
+  <!-- Limits -->
+  <section id="limits" class="mb-5">
+    <h2 class="h4">Limitations &amp; edge cases</h2>
+    <ul>
+      <li><strong>Multisig</strong> (e.g., <code>multi(...)</code>) isn’t discoverable from a single XPUB — use a descriptor for those wallets.</li>
+      <li><strong>Wrong account/path:</strong> if you choose a path you never used, you’ll see zero results.</li>
+      <li><strong>Very large gaps:</strong> if you created hundreds of unused addresses, the 200 limit may miss far-out ones.</li>
+      <li><strong>Non-standard exports:</strong> some wallets export <code>ypub/zpub</code> prefixes that don’t match the account you actually used — verify with the preview addresses.</li>
+      <li><strong>Scope:</strong> single-sig accounts only; multisig or other accounts/paths require their own XPUB (or descriptor).</li>
+    </ul>
+  </section>
+
+  <!-- Open Source -->
+  <section id="open-source" class="mb-5">
+    <h2 class="h4">Open source</h2>
+    <p>All code is public — check the repo to verify behavior and contribute:
+      <a href="https://github.com/traplordmoses/plebscan/" target="_blank" rel="noopener">github.com/traplordmoses/plebscan</a>.
+    </p>
+  </section>
+
+  <!-- About -->
+  <section id="about" class="mb-5">
+    <h2 class="h4">About &amp; thanks</h2>
+    <p>Plebscan was developed at <strong>pleb.fi Miami 2025</strong>, where it won the Honorable Mention prize.</p>
+    <p>Built by <a href="https://x.com/sloshlord" target="_blank" rel="noopener">@sloshlord</a> and
+       <a href="https://x.com/matthewvuk2" target="_blank" rel="noopener">@matthewvuk2</a>.
+       Huge thanks to Matthew for the hard work and to pleb.fi for hosting an amazing hackathon.</p>
+    <p>Have ideas or want to collaborate? DM <a href="https://x.com/sloshlord" target="_blank" rel="noopener">@sloshlord</a> on X.</p>
+  </section>
+
+  <!-- Donations -->
+  <section id="donations" class="mb-5">
+    <h2 class="h4">Donations</h2>
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <div class="text-muted small">Bitcoin</div>
+            <code id="addr-btc">bc1qkjzf92995rfawqagxyvxkm45aaphuxueyypq5c</code>
+          </div>
+          <button class="btn btn-outline-light btn-sm" data-copy-target="#addr-btc">Copy</button>
+        </div>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <div class="text-muted small">Ordinals / Runes / BRC-20 (Taproot)</div>
+            <code id="addr-tr">bc1p05ukcygfutm73h8jajkxmy8vjhwm6en764cdxu978sp7px04jf5sudkgfy</code>
+          </div>
+          <button class="btn btn-outline-light btn-sm" data-copy-target="#addr-tr">Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Disclaimer -->
+  <section id="disclaimer" class="mb-5">
+    <h2 class="h4">Disclaimer</h2>
+    <div class="alert alert-warning mb-0" role="alert">
+      Plebscan is experimental, read-only software. Do not use results as the sole source of truth;
+      verify independently before taking action. Not financial or tax advice.
+    </div>
+  </section>
+
+  <div class="mt-4">
+    <a class="btn btn-primary" href="{{ url_for('index') }}">← Back to Scan</a>
+    <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Go to Dashboard</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Simple copy-to-clipboard for donation addresses
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-copy-target]');
+    if (!btn) return;
+    const sel = btn.getAttribute('data-copy-target');
+    const el = document.querySelector(sel);
+    if (!el) return;
+
+    const text = el.textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = original, 1200);
+    }).catch(() => {
+      // Fallback for older browsers
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const selObj = window.getSelection();
+      selObj.removeAllRanges();
+      selObj.addRange(range);
+      try { document.execCommand('copy'); } catch (err) {}
+      selObj.removeAllRanges();
+    });
+  });
+</script>
+{% endblock %}
