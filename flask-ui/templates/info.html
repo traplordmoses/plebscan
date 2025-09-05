@@ -2,13 +2,37 @@
 {% block title %}Info / FAQ — Plebscan{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<!-- page-scoped tweaks -->
+<style>
+  /* overall rhythm */
+  #info-page{ line-height:1.75; letter-spacing:.01em; }
+  #info-page h2.h4{ margin-top:2rem; margin-bottom:.75rem; scroll-margin-top:88px; }
+  #info-page p{ margin-bottom:1rem; }
+  #info-page ul,#info-page ol{ margin-bottom:1rem; }
+  #info-page li+li{ margin-top:.35rem; }
+
+  /* TOC: subtle background */
+  #info-page .toc-soft{
+    background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.02));
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: .75rem;
+  }
+  #info-page .toc-soft .card-body{ padding:1rem 1.25rem; }
+  #info-page .toc-soft .card-title{ margin-bottom:.5rem; }
+
+  /* softer alerts on Darkly */
+  #info-page .alert{ color:var(--bs-body-color); }
+  #info-page .alert-info    { background-color: rgba(var(--bs-info-rgb),   .14); border-color: rgba(var(--bs-info-rgb),   .28); }
+  #info-page .alert-warning { background-color: rgba(var(--bs-warning-rgb),.14); border-color: rgba(var(--bs-warning-rgb),.28); }
+</style>
+
+<div id="info-page" class="container py-4">
 
   <h1 class="mb-3">Plebscan — Info &amp; FAQ</h1>
   <p class="text-muted">Read-only viewer for Bitcoin metaprotocol assets.</p>
 
   <!-- Table of Contents -->
-  <div class="card mb-4">
+  <div class="card mb-4 toc-soft">
     <div class="card-body">
       <h5 class="card-title mb-3">On this page</h5>
       <ul class="mb-0">
@@ -85,8 +109,7 @@
       </li>
       <li>Open Sparrow → <em>File → New Wallet</em>. Give it a name.</li>
       <li><strong>Import your wallet (Xverse, UniSat, etc.).</strong> Choose “Use recovery phrase” and enter your 12/24 words.
-        If you used a BIP39 passphrase (25th word), turn on the passphrase toggle and enter it —
-        without it you’ll get a different wallet.</li>
+        If you used a BIP39 passphrase (25th word), turn on the passphrase toggle and enter it — without it you’ll get a different wallet.</li>
       <li><strong>Select Script Type = Taproot (P2TR).</strong> Sparrow auto-fills the derivation path as
         <code>m/86'/0'/0'</code> (BIP-86, mainnet). Click <em>Create Wallet</em>.</li>
       <li><strong>Copy your BIP-86 XPUB.</strong> Go to the wallet’s <em>Settings</em> tab → <em>Key Derivation</em> →

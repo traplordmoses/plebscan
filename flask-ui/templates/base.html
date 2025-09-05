@@ -9,45 +9,42 @@
 </head>
 <body class="bg-dark">
 
-  <!-- NAVBAR -->
-  <nav class="navbar navbar-dark bg-dark navbar-expand-md mb-3">
-    <div class="container">
-      <a class="navbar-brand" href="{{ url_for('index') }}">Plebscan</a>
+<!-- NAVBAR -->
+<nav class="navbar navbar-dark bg-dark navbar-expand-md mb-3 py-2">
+  <div class="container">
+    <a class="navbar-brand fs-3 fw-bold" href="{{ url_for('index') }}">Plebscan</a>
 
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
-              aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+            aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
 
-      <div class="collapse navbar-collapse" id="mainNav">
-        <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"
-               href="{{ url_for('index') }}">Scan</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}"
-               href="{{ url_for('dashboard') }}">Dashboard</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'info' %}active{% endif %}"
-               href="{{ url_for('info') }}">Info / FAQ</a>
-          </li>
-          <!-- Optional external links -->
-          <li class="nav-item">
-            <a class="nav-link" target="_blank" href="https://github.com/traplordmoses/plebscan">GitHub ↗</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" target="_blank" href="https://x.com/yourhandle">Twitter ↗</a>
-          </li>
-        </ul>
-      </div>
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav ms-auto align-items-center gap-3">
+        <li class="nav-item">
+          <a class="nav-link fs-5 {% if request.endpoint == 'index' %}active{% endif %}"
+             href="{{ url_for('index') }}">Scan</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link fs-5 {% if request.endpoint == 'dashboard' %}active{% endif %}"
+             href="{{ url_for('dashboard') }}">Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link fs-5 {% if request.endpoint == 'info' %}active{% endif %}"
+             href="{{ url_for('info') }}">Info / FAQ</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link fs-5" target="_blank" href="https://github.com/traplordmoses/plebscan">GitHub ↗</a>
+        </li>
+      </ul>
     </div>
-  </nav>
+  </div>
+</nav>
 
-  <!-- PAGE CONTENT -->
-  <div class="container my-4">
-    {% block content %}{% endblock %}
+
+<!-- PAGE CONTENT -->
+<div class="container my-4">
+   {% block content %}{% endblock %}
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

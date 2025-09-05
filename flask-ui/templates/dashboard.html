@@ -16,95 +16,129 @@
  .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 
-<div class="sort-toggle">
-  Sort:
-  {% if request.args.get('sort','assets') == 'assets' %}
-    <strong>Assets</strong> · <a href="{{ url_for('dashboard', sort='value') }}">Value</a>
-  {% else %}
-    <a href="{{ url_for('dashboard', sort='assets') }}">Assets</a> · <strong>Value</strong>
-  {% endif %}
-</div>
+{% extends "base.html" %}
+{% block title %}Plebscan Dashboard{% endblock %}
+
+{% block content %}
+<!-- Confetti JS -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
+
+<style>
+ .rune-card{background:#222;color:#fff;border:0}
+ .rune-row{display:flex;align-items:flex-start;gap:.75rem;flex-wrap:wrap}
+ .rune-left{flex:1 1 160px;min-width:160px}
+ .rune-right{flex:0 0 auto;min-width:180px;text-align:right;line-height:1.2}
+ .rune-right .small{white-space:nowrap}
+ .rune-bag{margin-top:.5rem;color:#9aa0a6}
+ .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
 
 <!-- SUMMARY -->
-  <div class="mb-4">
-    <div class="card" style="background-color:#222">
-      <div class="card-header" style="background-color:#1c1c1c;">
-        <h1 class="h3 mb-2" style="color:#c6c6c6; text-transform:uppercase; letter-spacing:1px; font-size:18px; margin-top:0.5rem;">
-          XPUB Portfolio Summary
-        </h1>
-      </div>
-      <div class="card-body">
-        {# counts and rune sums #}
-        {% set total_runes = (wallets | map(attribute='runes_count',  default=0) | sum) %}
-        {% set runes_floor_btc = (wallets | map(attribute='runes_sum_btc', default=0) | sum | float) %}
-        {% set runes_floor_usd = (wallets | map(attribute='runes_sum_usd', default=0) | sum | float) %}
+<div class="card" style="background-color:#222">
+  <div class="card-header" style="background-color:#1c1c1c;">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h1 class="h3 mb-0" style="color:#c6c6c6; text-transform:uppercase; letter-spacing:1px; font-size:18px;">
+        XPUB Portfolio Summary
+      </h1>
 
-        {# alkanes #}
-        {% set total_alkanes      = (wallets | map(attribute='alkanes_count',   default=0) | sum) %}
-        {% set alkanes_floor_btc  = (wallets | map(attribute='alkanes_sum_btc', default=0) | sum | float) %}
-        {% set alkanes_floor_usd  = (wallets | map(attribute='alkanes_sum_usd', default=0) | sum | float) %}
+      <div class="d-flex align-items-center gap-3">
+        {# preserve current flags when changing sort #}
+        {% set nr = request.args.get('no_runes') %}
+        {% set sr = request.args.get('slow_runes') %}
 
-        {# BRC-20 count (works across list-or-count shapes) #}
-        {% set brc = namespace(total=0) %}
-        {% for _w in wallets %}
-          {% set brc.total = brc.total + (_w.brc20|length
-              if _w.brc20 is defined and _w.brc20 is not none
-              else (_w.brc20_count|default(0))) %}
-        {% endfor %}
-        {% set total_brc20 = brc.total %}
-
-        {# combined totals (BRC-20 not priced here) #}
-        {% set combined_btc = (total_floor_btc | default(0) | float)
-                              + (runes_floor_btc   | default(0) | float)
-                              + (alkanes_floor_btc | default(0) | float) %}
-        {% set combined_usd = (total_floor_usd | default(0) | float)
-                              + (runes_floor_usd   | default(0) | float)
-                              + (alkanes_floor_usd | default(0) | float) %}
-
-        {# ---- Build the headline pieces so we can render with commas and an & before the last item ---- #}
-        {% set ns = namespace(parts=[]) %}
-        {% set _ = ns.parts.append(total_inscriptions ~ ' ' ~ ('ordinal' if total_inscriptions == 1 else 'ordinals')) %}
-        {% if total_brc20 and total_brc20 > 0 %}
-          {% set _ = ns.parts.append(total_brc20 ~ ' ' ~ ('brc20' if total_brc20 == 1 else 'brc20s')) %}
-        {% endif %}
-        {% if total_runes and total_runes > 0 %}
-          {% set _ = ns.parts.append(total_runes ~ ' ' ~ ('rune' if total_runes == 1 else 'runes')) %}
-        {% endif %}
-        {% if total_alkanes and total_alkanes > 0 %}
-          {% set _ = ns.parts.append(total_alkanes ~ ' ' ~ ('alkane' if total_alkanes == 1 else 'alkanes')) %}
-        {% endif %}
-        {% set cnt = ns.parts|length %}
-
-        <p class="lead" style="font-size:36px">
-          {% if cnt <= 1 %}
-            {{ ns.parts[0] if cnt == 1 else '0 ordinals' }}
+        <div class="sort-toggle small">
+          Sort:
+          {% if request.args.get('sort','assets') == 'assets' %}
+            <strong>Assets</strong> ·
+            <a href="{{ url_for('dashboard',
+                                sort='value',
+                                no_runes=('1' if nr=='1' else None),
+                                slow_runes=('1' if sr=='1' else None)) }}">
+              Value
+            </a>
           {% else %}
-            {{ ns.parts[:cnt-1]|join(', ') }} &amp; {{ ns.parts[cnt-1] }}
+            <a href="{{ url_for('dashboard',
+                                sort='assets',
+                                no_runes=('1' if nr=='1' else None),
+                                slow_runes=('1' if sr=='1' else None)) }}">
+              Assets
+            </a> · <strong>Value</strong>
           {% endif %}
-          across {{ total_wallets }} {{ 'wallet' if total_wallets == 1 else 'wallets' }}.
-        </p>
+        </div>
 
-        <p class="lead" style="font-size:36px">
-          Total floor: {{ "{:,.6f}".format(combined_btc) }} BTC
-          <span class="badge text-bg-success">(${{ "{:,.2f}".format(combined_usd) }})</span>
-        </p>
-
-        <div class="text-muted" style="font-size:20px">
-          Ordinals: {{ "{:,.6f}".format(total_floor_btc|float) }} BTC
-        </div>
-        <div class="text-muted" style="font-size:20px">
-          BRC-20s: {{ "{:,.6f}".format(0.0) }} BTC
-        </div>
-        <div class="text-muted" style="font-size:20px">
-          Runes: {{ "{:,.6f}".format(runes_floor_btc|float) }} BTC
-        </div>
-        <div class="text-muted" style="font-size:20px">
-          Alkanes: {{ "{:,.6f}".format(alkanes_floor_btc|float) }} BTC
-        </div>
+        <!-- Effects toggle (sound + confetti) -->
+        <button id="effectsToggle" class="btn btn-sm btn-outline-light">
+          Turn off sound &amp; confetti
+        </button>
       </div>
-      <hr>
     </div>
   </div>
+
+  <div class="card-body">
+    {# ---- totals & labels (needed for the paragraphs below) ---- #}
+    {% set total_runes       = (wallets | map(attribute='runes_count',  default=0) | sum) %}
+    {% set runes_floor_btc   = (wallets | map(attribute='runes_sum_btc', default=0) | sum | float) %}
+    {% set runes_floor_usd   = (wallets | map(attribute='runes_sum_usd', default=0) | sum | float) %}
+    {% set total_alkanes     = (wallets | map(attribute='alkanes_count', default=0) | sum) %}
+    {% set alkanes_floor_btc = (wallets | map(attribute='alkanes_sum_btc', default=0) | sum | float) %}
+    {% set alkanes_floor_usd = (wallets | map(attribute='alkanes_sum_usd', default=0) | sum | float) %}
+
+    {% set brc = namespace(total=0) %}
+    {% for _w in wallets %}
+      {% set brc.total = brc.total + (_w.brc20|length
+          if _w.brc20 is defined and _w.brc20 is not none
+          else (_w.brc20_count|default(0))) %}
+    {% endfor %}
+    {% set total_brc20 = brc.total %}
+
+    {% set combined_btc = (total_floor_btc | default(0) | float)
+                          + (runes_floor_btc   | default(0) | float)
+                          + (alkanes_floor_btc | default(0) | float) %}
+    {% set combined_usd = (total_floor_usd | default(0) | float)
+                          + (runes_floor_usd   | default(0) | float)
+                          + (alkanes_floor_usd | default(0) | float) %}
+
+    {% set ns = namespace(parts=[]) %}
+    {% set _ = ns.parts.append(total_inscriptions ~ ' ' ~ ('ordinal' if total_inscriptions == 1 else 'ordinals')) %}
+    {% if total_brc20 and total_brc20 > 0 %}
+      {% set _ = ns.parts.append(total_brc20 ~ ' ' ~ ('brc20' if total_brc20 == 1 else 'brc20s')) %}
+    {% endif %}
+    {% if total_runes and total_runes > 0 %}
+      {% set _ = ns.parts.append(total_runes ~ ' ' ~ ('rune' if total_runes == 1 else 'runes')) %}
+    {% endif %}
+    {% if total_alkanes and total_alkanes > 0 %}
+      {% set _ = ns.parts.append(total_alkanes ~ ' ' ~ ('alkane' if total_alkanes == 1 else 'alkanes')) %}
+    {% endif %}
+    {% set cnt = ns.parts|length %}
+
+    <p class="lead" style="font-size:36px">
+      {% if cnt <= 1 %}
+        {{ ns.parts[0] if cnt == 1 else '0 ordinals' }}
+      {% else %}
+        {{ ns.parts[:cnt-1]|join(', ') }} &amp; {{ ns.parts[cnt-1] }}
+      {% endif %}
+      across {{ total_wallets }} {{ 'wallet' if total_wallets == 1 else 'wallets' }}.
+    </p>
+
+    <p class="lead" style="font-size:36px">
+      Total floor: {{ "{:,.6f}".format(combined_btc) }} BTC
+      <span class="badge text-bg-success">(${{ "{:,.2f}".format(combined_usd) }})</span>
+    </p>
+
+    <div class="text-muted" style="font-size:20px">
+      Ordinals: {{ "{:,.6f}".format(total_floor_btc|float) }} BTC
+    </div>
+    <div class="text-muted" style="font-size:20px">
+      BRC-20s: {{ "{:,.6f}".format(0.0) }} BTC
+    </div>
+    <div class="text-muted" style="font-size:20px">
+      Runes: {{ "{:,.6f}".format(runes_floor_btc|float) }} BTC
+    </div>
+    <div class="text-muted" style="font-size:20px">
+      Alkanes: {{ "{:,.6f}".format(alkanes_floor_btc|float) }} BTC
+    </div>
+  </div>
+</div>
 
   <!-- PER-WALLET BREAKDOWN -->
   {% for w in wallets %}
@@ -359,33 +393,55 @@
   {% endfor %}
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const duration = 1500, end = Date.now() + duration;
-  (function frame() {
-    confetti({ particleCount: 80, angle: Math.random()*360, spread: 90, startVelocity: 30, gravity: 1, ticks: 120, scalar: 1, origin: { x: Math.random(), y: Math.random() - 0.2 }});
-    if (Date.now() < end) requestAnimationFrame(frame);
-  })();
+(function () {
+  const EFFECTS_KEY = 'psEffects';        // 'on' or 'off'
+  const SOUND_VOL   = 0.18;               // lower default volume
+  const btn         = document.getElementById('effectsToggle');
 
-  const sound = new Audio('{{ url_for("static", filename="victory.mp3") }}');
-  sound.volume = 0.5;
-  sound.play().catch(() => {
-    const unlock = () => {
-      sound.play().catch(() => {
-        const btn = document.createElement('button');
-        btn.textContent = 'Enable sound';
-        btn.style.position = 'fixed'; btn.style.bottom = '16px'; btn.style.right = '16px';
-        btn.style.zIndex = '9999'; btn.style.padding = '8px 12px'; btn.style.borderRadius = '10px';
-        btn.style.border = 'none'; btn.style.background = '#1e90ff'; btn.style.color = '#fff';
-        btn.style.fontSize = '14px'; btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-        btn.addEventListener('click', () => { sound.play().catch(()=>{}); btn.remove(); });
-        document.body.appendChild(btn);
+  function effectsOn() { return localStorage.getItem(EFFECTS_KEY) !== 'off'; }
+  function setBtnLabel() {
+    if (!btn) return;
+    btn.textContent = effectsOn()
+      ? 'Turn off sound & confetti'
+      : 'Turn on sound & confetti';
+  }
+
+  function runConfetti() {
+    const duration = 1200, end = Date.now() + duration;
+    (function frame() {
+      confetti({
+        particleCount: 60,
+        spread: 90,
+        startVelocity: 28,
+        gravity: 1,
+        ticks: 110,
+        scalar: 1,
+        origin: { x: Math.random(), y: Math.random() - 0.2 }
       });
-      window.removeEventListener('pointerdown', unlock);
-      window.removeEventListener('keydown', unlock);
-    };
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
-  });
-});
+      if (Date.now() < end) requestAnimationFrame(frame);
+    })();
+  }
+
+  function playSound() {
+    const sound = new Audio('{{ url_for("static", filename="victory.mp3") }}');
+    sound.volume = SOUND_VOL;
+    sound.play().catch(() => { /* autoplay blocked; ignore */ });
+  }
+
+  // Toggle click
+  if (btn) {
+    btn.addEventListener('click', () => {
+      localStorage.setItem(EFFECTS_KEY, effectsOn() ? 'off' : 'on');
+      setBtnLabel();
+    });
+    setBtnLabel();
+  }
+
+  // Fire effects (if enabled)
+  if (effectsOn()) {
+    runConfetti();
+    playSound();
+  }
+})();
 </script>
-{% endblock %}
+
