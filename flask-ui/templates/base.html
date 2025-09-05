@@ -26,10 +26,6 @@
              href="{{ url_for('index') }}">Scan</a>
         </li>
         <li class="nav-item">
-          <a class="nav-link fs-5 {% if request.endpoint == 'dashboard' %}active{% endif %}"
-             href="{{ url_for('dashboard') }}">Dashboard</a>
-        </li>
-        <li class="nav-item">
           <a class="nav-link fs-5 {% if request.endpoint == 'info' %}active{% endif %}"
              href="{{ url_for('info') }}">Info / FAQ</a>
         </li>
