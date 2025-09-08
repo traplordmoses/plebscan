@@ -1,10 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Plebscan Dashboard{% endblock %}
 
-{% block content %}
-<!-- Confetti JS -->
-<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
-
+{% block head %}
 <style>
  /* Rune cards: keep a stable two-column header that wraps gracefully */
  .rune-card{background:#222;color:#fff;border:0}
@@ -15,24 +12,9 @@
  .rune-bag{margin-top:.5rem;color:#9aa0a6}
  .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-
-{% extends "base.html" %}
-{% block title %}Plebscan Dashboard{% endblock %}
+{% endblock head %}
 
 {% block content %}
-<!-- Confetti JS -->
-<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
-
-<style>
- .rune-card{background:#222;color:#fff;border:0}
- .rune-row{display:flex;align-items:flex-start;gap:.75rem;flex-wrap:wrap}
- .rune-left{flex:1 1 160px;min-width:160px}
- .rune-right{flex:0 0 auto;min-width:180px;text-align:right;line-height:1.2}
- .rune-right .small{white-space:nowrap}
- .rune-bag{margin-top:.5rem;color:#9aa0a6}
- .text-truncate-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-</style>
-
 <!-- SUMMARY -->
 <div class="card" style="background-color:#222">
   <div class="card-header" style="background-color:#1c1c1c;">
@@ -75,7 +57,7 @@
   </div>
 
   <div class="card-body">
-    {# ---- totals & labels (needed for the paragraphs below) ---- #}
+    {# ---- totals & labels ---- #}
     {% set total_runes       = (wallets | map(attribute='runes_count',  default=0) | sum) %}
     {% set runes_floor_btc   = (wallets | map(attribute='runes_sum_btc', default=0) | sum | float) %}
     {% set runes_floor_usd   = (wallets | map(attribute='runes_sum_usd', default=0) | sum | float) %}
@@ -140,15 +122,16 @@
   </div>
 </div>
 
-  <!-- PER-WALLET BREAKDOWN -->
-  {% for w in wallets %}
+<!-- PER-WALLET BREAKDOWN -->
+{% for w in wallets %}
   <div class="card mb-5 shadow-lg" style="background-color:#333; color:white;">
 
     <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center"
          style="background-color:#1e1e1e; color:#fff; padding:1rem 1.25rem; border-bottom:2px solid #444;">
 
-      <!-- Left Side -->
       {% set brc20_len = (w.brc20|length if w.brc20 is defined and w.brc20 is not none else (w.brc20_count|default(0))) %}
+
+      <!-- Left -->
       <div>
         <h5 class="mb-3 fw-bold" style="font-size:28px">
           Wallet {{ loop.index }}
@@ -193,7 +176,7 @@
         {% endif %}
       </div>
 
-      <!-- Right Side: Quick counts -->
+      <!-- Right quick counts -->
       <div class="mt-3 mt-md-0">
         <span class="badge bg-info text-dark me-2">
           {{ w.inscription_count }} {{ 'ordinal' if w.inscription_count == 1 else 'ordinals' }}
@@ -217,7 +200,7 @@
         </span>
         {% endif %}
       </div>
-    </div> <!-- end card-header -->
+    </div> <!-- /card-header -->
 
     <!-- Card Body -->
     <div class="card-body" style="background-color:#111">
@@ -227,7 +210,6 @@
         <div class="col-12 col-sm-6 col-md-4 col-lg-3 mb-4">
           <div class="card h-100 shadow-sm">
             <a href="https://magiceden.io/ordinals/item-details/{{ tok.id }}" target="_blank">
-              {# KEEPING YOUR ORIGINAL IMAGE LOGIC #}
               {% set img_url = tok.contentURI or tok.contentPreviewURI %}
               <img
                 src="{{ img_url if img_url else url_for('static', filename='placeholder.png') }}"
@@ -252,9 +234,9 @@
         </div>
         {% endfor %}
 
-      </div> <!-- end inscriptions row -->
+      </div> <!-- /inscriptions row -->
 
-      <!-- BRC-20 GRID (separate section, not nested under Alkanes) -->
+      <!-- BRC-20 GRID -->
       {% if w.brc20 is defined and w.brc20 is not none and w.brc20|length > 0 %}
       <hr class="my-4" style="border-color:#444;">
       <h6 class="text-uppercase text-muted mb-3">BRC-20</h6>
@@ -390,8 +372,12 @@
       {% endif %}
     </div> <!-- /card-body -->
   </div> <!-- /wallet card -->
-  {% endfor %}
+{% endfor %}
+{% endblock content %}
 
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
 <script>
 (function () {
   const EFFECTS_KEY = 'psEffects';        // 'on' or 'off'
@@ -444,4 +430,4 @@
   }
 })();
 </script>
-
+{% endblock scripts %}
